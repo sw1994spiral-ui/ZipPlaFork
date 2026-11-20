@@ -1,6 +1,6 @@
 # 配置先: リポジトリの .github/workflows/build.yml
 # windows-latest 上で MSBuild を使い、AutoBuild 構成でビルドして成果物 (exe 一式) を artifact 化する。
-# v2: .NET Framework 4.5.2 の参照アセンブリを NuGet パッケージから取得し、FrameworkPathOverride で明示する（MSB3644 回避）。
+# v3: FrameworkPathOverride のパスを Actions 式 ${{ github.workspace }} で渡す（v2 の %GITHUB_WORKSPACE% は pwsh で展開されず MSB3644 が再発したため）。
 name: build-zippla-dark
 
 on:
@@ -24,7 +24,7 @@ jobs:
           Expand-Archive -Path refasm.zip -DestinationPath refasm
 
       - name: Build (AutoBuild)
-        run: msbuild source\ZipPla.sln /p:Configuration=AutoBuild /p:Platform="Any CPU" /p:FrameworkPathOverride="%GITHUB_WORKSPACE%\refasm\build\.NETFramework\v4.5.2" /m
+        run: msbuild source\ZipPla.sln /p:Configuration=AutoBuild /p:Platform="Any CPU" /p:FrameworkPathOverride="${{ github.workspace }}\refasm\build\.NETFramework\v4.5.2" /m
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
