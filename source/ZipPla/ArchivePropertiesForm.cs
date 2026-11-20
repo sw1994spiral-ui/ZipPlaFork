@@ -21,6 +21,7 @@ namespace ZipPla
         public ArchivePropertiesForm(string path, int pageCount, ArchivesInArchiveMode aia, ImageInfo imageInfo, MovieInfo movieInfo)
         {
             InitializeComponent();
+            DarkTheme.Apply(this);
 
             Program.SetFormHeightByControlLocationAndPackToOwnerScreen(this, btnOK);
 
