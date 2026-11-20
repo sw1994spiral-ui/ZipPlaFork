@@ -430,6 +430,7 @@ namespace ZipPla
         public SettingForm()
         {
             InitializeComponent();
+            DarkTheme.Apply(this);
 
             new MessageForwarder(cbLanguage, ForwardedMessage.MouseWheel);
             new MessageForwarder(cbHistory, ForwardedMessage.MouseWheel);
@@ -1842,6 +1843,7 @@ namespace ZipPla
         public int MaximumNumberOfHistories = 100;
         public bool ShowHintOnlyOnce = false;
         public bool CheckNgen = false;
+        public bool DarkMode = false;
         public DragAndDropAction DragAndDropAction = DragAndDropAction.ShowThumbnails;
         public ulong BuiltInViewerMemoryLimit = long.MaxValue;
         public bool AllowUntestedPlugins = false;
