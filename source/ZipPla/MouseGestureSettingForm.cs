@@ -154,6 +154,7 @@ namespace ZipPla
             if (templates == null) throw new ArgumentNullException("templates");
             if (templates.Length == 0) throw new ArgumentException("templates must have at least one element.");
             InitializeComponent();
+            DarkTheme.Apply(this);
 
             new MessageForwarder(dataGridView, ForwardedMessage.MouseWheel);
 
