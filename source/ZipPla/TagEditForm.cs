@@ -24,6 +24,7 @@ namespace ZipPla
         public TagEditForm(IReadOnlyList<string> newTags)
         {
             InitializeComponent();
+            DarkTheme.Apply(this);
 
             ToolStripOverwriter.SquarizeToolStripInClass(this);
 
