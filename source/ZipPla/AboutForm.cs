@@ -16,6 +16,7 @@ namespace ZipPla
         public AboutForm()
         {
             InitializeComponent();
+            DarkTheme.Apply(this);
             pbLight.Image = Program.GetLightLogoImage(pbLight.Size);
             pbDark.Image = Program.GetDarkLogoImage(pbDark.Size);
 
