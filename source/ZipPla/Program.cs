@@ -188,6 +188,7 @@ namespace ZipPla
             }
 
             Directory.SetCurrentDirectory(Application.StartupPath);
+            if (DarkTheme.Enabled) ToolStripManager.Renderer = DarkTheme.ToolStripRenderer;
 
             string[] cmds = ShortcutResolver.Exec(rawCommands).ToArray();
 
