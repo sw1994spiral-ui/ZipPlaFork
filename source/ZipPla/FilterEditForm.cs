@@ -30,6 +30,7 @@ namespace ZipPla
         public FilterEditForm(List<string> filterinStringsInOut, Dictionary<string, string> aliasesToFilteringStringsInOut, bool invariantIn, Color profileColor)
         {
             InitializeComponent();
+            DarkTheme.Apply(this);
             
             new MessageForwarder(dataGridView, ForwardedMessage.MouseWheel);
 
