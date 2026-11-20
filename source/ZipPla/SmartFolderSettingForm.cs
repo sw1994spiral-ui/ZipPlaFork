@@ -40,6 +40,7 @@ namespace ZipPla
                 }
             }
             InitializeComponent();
+            DarkTheme.Apply(this);
 
             new MessageForwarder(dataGridView, ForwardedMessage.MouseWheel);
 
