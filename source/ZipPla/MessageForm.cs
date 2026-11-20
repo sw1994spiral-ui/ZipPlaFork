@@ -525,6 +525,7 @@ namespace ZipPla
                 form.Text = caption;
                 
                 PlaySystemSound(icon);
+                DarkTheme.Apply(form);
                 form.ShowDialog(owner);
 
                 if (checkBoxControl != null) checkBoxChecked = checkBoxControl.Checked;
