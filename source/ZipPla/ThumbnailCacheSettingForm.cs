@@ -20,6 +20,7 @@ namespace ZipPla
         public ThumbnailCacheSettingForm(string cacheRoot, Color color, bool firstSetting = false)
         {
             InitializeComponent();
+            DarkTheme.Apply(this);
 
             this.firstSetting = firstSetting;
 
