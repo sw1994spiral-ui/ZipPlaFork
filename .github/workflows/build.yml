@@ -1,5 +1,6 @@
 # 配置先: リポジトリの .github/workflows/build.yml
 # windows-latest 上で MSBuild を使い、AutoBuild 構成でビルドして成果物 (exe 一式) を artifact 化する。
+# v2: .NET Framework 4.5.2 の参照アセンブリを NuGet パッケージから取得し、FrameworkPathOverride で明示する（MSB3644 回避）。
 name: build-zippla-dark
 
 on:
@@ -16,17 +17,14 @@ jobs:
       - name: Setup MSBuild
         uses: microsoft/setup-msbuild@v2
 
-      # 単一プロジェクト構成で packages.config は無いため NuGet リストアは不要。
-      # Pre/PostBuildEvent の cscript (JScript 前後処理) は Windows 標準機能のためランナー上でそのまま動く。
-      - name: Build (AutoBuild)
-        run: msbuild source\ZipPla.sln /p:Configuration=AutoBuild /p:Platform="Any CPU" /m
+      - name: Fetch .NET Framework 4.5.2 reference assemblies
+        shell: pwsh
+        run: |
+          Invoke-WebRequest -Uri "https://www.nuget.org/api/v2/package/Microsoft.NETFramework.ReferenceAssemblies.net452/1.0.3" -OutFile refasm.zip
+          Expand-Archive -Path refasm.zip -DestinationPath refasm
 
-      # もし MSB3644 (.NET Framework 4.5.2 の参照アセンブリが見つからない) が出た場合は、
-      # 以下の2ステップのコメントを外し、msbuild に /p:FrameworkPathOverride を追加すること。
-      # - name: Fetch .NET Framework 4.5.2 reference assemblies
-      #   run: nuget install Microsoft.NETFramework.ReferenceAssemblies.net452 -Version 1.0.3 -OutputDirectory refasm
-      # その場合の Build コマンド:
-      #   msbuild source\ZipPla.sln /p:Configuration=AutoBuild /p:Platform="Any CPU" /p:FrameworkPathOverride="%GITHUB_WORKSPACE%\refasm\Microsoft.NETFramework.ReferenceAssemblies.net452.1.0.3\build\.NETFramework\v4.5.2" /m
+      - name: Build (AutoBuild)
+        run: msbuild source\ZipPla.sln /p:Configuration=AutoBuild /p:Platform="Any CPU" /p:FrameworkPathOverride="%GITHUB_WORKSPACE%\refasm\build\.NETFramework\v4.5.2" /m
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
