@@ -18,6 +18,7 @@ namespace ZipPla
         public ViewerFormMakeShortcutDialog(ViewerForm.CommandLineOptionInfo info, string currentLocation)
         {
             InitializeComponent();
+            DarkTheme.Apply(this);
 
             commandLineOptionInfo = info;
             this.currentLocation = currentLocation;
