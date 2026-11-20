@@ -1610,6 +1610,7 @@ namespace ZipPla
             Program.RunTimeMeasure.Block("InitializeComponent");
 #endif
             InitializeComponent();
+            DarkTheme.Apply(this);
 
 
 #if RUNTIME

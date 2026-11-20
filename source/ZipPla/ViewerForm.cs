@@ -993,6 +993,7 @@ namespace ZipPla
             if (ipcLookAheadInfo == null && Program.CheckConfigException()) CloseWithoutSave();
 
             InitializeComponent();
+            DarkTheme.Apply(this);
 
             Configuration.WaitPrepareTask();
 

@@ -2696,6 +2696,7 @@
     </Compile>
     <Compile Include="VirtualFolder.cs" />
     <Compile Include="Configuration.cs" />
+    <Compile Include="DarkTheme.cs" />
     <Compile Include="DataGridViewSorter.cs" />
     <Compile Include="GenerarClasses.cs">
       <SubType>Component</SubType>
