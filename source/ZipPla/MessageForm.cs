@@ -513,7 +513,18 @@ namespace ZipPla
 
                 form.Paint += (sender, e) =>
                 {
-                    if (e.ClipRectangle.IntersectsWith(buttonRegionRect)) e.Graphics.FillRectangle(SystemBrushes.Window, buttonRegionRect);
+                    if (e.ClipRectangle.IntersectsWith(buttonRegionRect))
+                    {
+                        // ダークモード時はメッセージ領域も暗く塗る（標準の白のままだと明色の文字が読めないため）
+                        if (DarkTheme.Enabled)
+                        {
+                            using (var brush = new SolidBrush(DarkTheme.FormBackground)) e.Graphics.FillRectangle(brush, buttonRegionRect);
+                        }
+                        else
+                        {
+                            e.Graphics.FillRectangle(SystemBrushes.Window, buttonRegionRect);
+                        }
+                    }
                     if (iconData != null && e.ClipRectangle.IntersectsWith(iconRect)) e.Graphics.DrawIcon(iconData, iconRect);
                 };
 

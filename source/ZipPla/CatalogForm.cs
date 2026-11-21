@@ -1612,6 +1612,7 @@ namespace ZipPla
 #endif
             InitializeComponent();
             DarkTheme.Apply(this);
+            SetupGenreMenu(); // ジャンル専用機能（試作）: 実装は CatalogForm.Genre.cs
 
 
 #if RUNTIME
@@ -5743,8 +5744,12 @@ namespace ZipPla
         }
 
         private static readonly bool SystemColorsWindowIsNearToWhite = ZipTag.NearToWhite(SystemColors.Window);
+        // ダークモード時のプレースホルダ（サムネイルなし）用の暗色ブラシ。明色のままだと浮いてしまうため。
+        private static readonly Brush DarkFileBackBrush = new SolidBrush(Color.FromArgb(58, 58, 64));
+        private static readonly Brush DarkDirectoryBackBrush = new SolidBrush(Color.FromArgb(76, 74, 58));
         private static Brush GetFileBackBrush(string path)
         {
+            if (DarkTheme.Enabled) return DarkFileBackBrush;
             return SystemColorsWindowIsNearToWhite ? Brushes.LightGray : Brushes.DimGray;// Brushes.LightYellow;;
             //return SystemColorsWindowIsNearToWhite ? Brushes.LightGray : Brushes.MidnightBlue;// Brushes.LightYellow;;
             //return SystemBrushes.Window;
@@ -5752,12 +5757,14 @@ namespace ZipPla
 
         private static Brush GetDirectoryBackBrush(string path)
         {
+            if (DarkTheme.Enabled) return DarkDirectoryBackBrush;
             //return SystemColorsWindowIsNearToWhite ? Brushes.LightYellow : Brushes.SaddleBrown;// Brushes.LightYellow;;// Brushes.LightYellow;;
             return SystemColorsWindowIsNearToWhite ? Brushes.LightYellow : Brushes.DarkSlateGray;// Brushes.LightYellow;;// Brushes.LightYellow;;
         }
 
         private static Brush GetFileDirectoryForeBrush(string path)
         {
+            if (DarkTheme.Enabled) return Brushes.White;
             return SystemColorsWindowIsNearToWhite ? Brushes.Black : Brushes.White;// Brushes.LightYellow;
         }
 
@@ -12857,6 +12864,15 @@ namespace ZipPla
                     addTagsFromFileName.Enabled = false;
                 }
                 tagToolStripMenuItem.DropDownItems.Add(addTagsFromFileName);
+
+                // ジャンル専用機能（試作）: 実装は CatalogForm.Genre.cs の ShowGenreEditorForContextMenu
+                tagToolStripMenuItem.DropDownItems.Add(new ToolStripSeparator());
+                var genreEditor = new ToolStripMenuItem("ジャンル編集...");
+                genreEditor.Click += (sender2, e2) =>
+                {
+                    ShowGenreEditorForContextMenu(selectedIndices, selectedPathArray, selectedNameArray);
+                };
+                tagToolStripMenuItem.DropDownItems.Add(genreEditor);
             }
             else
             {
@@ -31563,6 +31579,9 @@ namespace ZipPla
 
             //SetTextHeightFromSquareCharCount(16);
             SetTextHeight(refresh: false);
+
+            // 名前表示が有効なのにテキスト高さが 0 付近だと名前が一切描画されなくなるため、最低1行分を確保する
+            if (showText && textHeight < GetCharHeight()) textHeight = GetCharHeight();
 
             if (layoutMode == ThumbViewerAligningMode.TotallyUniformedGrid)
             {

@@ -2738,6 +2738,10 @@
       <DependentUpon>SettingForm.cs</DependentUpon>
     </Compile>
     <Compile Include="MessageForwarder.cs" />
+    <Compile Include="CatalogForm.Genre.cs">
+      <DependentUpon>CatalogForm.cs</DependentUpon>
+    </Compile>
+    <Compile Include="ZipPlaGenre.cs" />
     <Compile Include="ZipPlaInfo.cs" />
     <Compile Include="ZipPlaLab.cs" />
     <Compile Include="ZipTag.cs" />
