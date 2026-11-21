@@ -80,6 +80,7 @@ namespace ZipPla
             form.BackColor = FormBackground;
             form.ForeColor = Foreground;
             TryEnableDarkTitleBar(form);
+            TryEnableDarkScrollBars(form);
             if (!form.IsHandleCreated)
             {
                 form.HandleCreated += (s, e) => TryEnableDarkTitleBar(form);
@@ -110,6 +111,9 @@ namespace ZipPla
 
         private static void ApplyToControl(Control control)
         {
+            // OS描画のスクロールバー等をダークテーマにする
+            TryEnableDarkScrollBars(control);
+
             // ToolStrip 系はレンダラーで描く
             var toolStrip = control as ToolStrip;
             if (toolStrip != null)
@@ -211,6 +215,29 @@ namespace ZipPla
                 || color == SystemColors.WindowText
                 || color == SystemColors.MenuText
                 || color == Color.Black;
+        }
+
+        // ---- OS描画パーツ（スクロールバー等）をダークテーマにする ----
+        [DllImport("uxtheme.dll", CharSet = CharSet.Unicode)]
+        private static extern int SetWindowTheme(IntPtr hwnd, string pszSubAppName, string pszSubIdList);
+
+        /// <summary>コントロールとそのスクロールバーに DarkMode_Explorer テーマを適用する。</summary>
+        public static void TryEnableDarkScrollBars(Control control)
+        {
+            if (!Enabled || control == null) return;
+            if (control.IsHandleCreated)
+            {
+                try { SetWindowTheme(control.Handle, "DarkMode_Explorer", null); }
+                catch { /* 非対応OSでは何もしない */ }
+            }
+            else
+            {
+                control.HandleCreated += (s, e) =>
+                {
+                    try { SetWindowTheme(control.Handle, "DarkMode_Explorer", null); }
+                    catch { }
+                };
+            }
         }
 
         // ---- OSタイトルバーをダークにする（Windows 10 2004以降 / Windows 11） ----
