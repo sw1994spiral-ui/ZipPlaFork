@@ -827,6 +827,7 @@ namespace ZipPla
 
             set
             {
+                value = DarkTheme.AdjustProfileColor(value);
                 currentProfileColor_BackColor = value;
                 currentProfileColor_ForeColor = ZipTag.GetForeColor(currentProfileColor_BackColor);
                 if (currentProfileColor_BackBrush != null) currentProfileColor_BackBrush.Dispose();
