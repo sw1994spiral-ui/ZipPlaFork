@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -42,6 +42,11 @@ namespace ZipPla
             new ZipPlaInfoParam("d", @"(l|r)?",
                 (s)=>s[0].ToLower() == "r" ? BindingMode.LeftToRight : BindingMode.RightToLeft,
                 (o)=>((BindingMode)o) == BindingMode.LeftToRight ? "r" : "l"),
+            // ジャンル専用機能（試作）: タグ "t" とは別枠の "g" キー。タグと同じカンマ区切り形式。
+            // 末尾に追加して既存パラメータのインデックス（0:c, 1:b, 2:r, 3:t, 4:d）を変えないこと。
+            new ZipPlaInfoParam("g", @"((?:[^,]+,)*[^,]+,?)",
+                (s)=>(from ss in s[0].Split(new char[1] {','}, StringSplitOptions.RemoveEmptyEntries) select ss.Trim()).ToArray(),
+                (o)=>string.Join(",", o as string[])),
         };
 
         private void FixLeftToRightInfo()
@@ -78,6 +83,12 @@ namespace ZipPla
         {
             get => zipPlaInfoParams[3].Value as string[];
             set { zipPlaInfoParams[3].Value = value; FixLeftToRightInfo(); }
+        }
+        // ジャンル専用機能（試作）: "g" キーの値。タグとは独立に読み書きされる。
+        public string[] GenreArray
+        {
+            get => zipPlaInfoParams[5].Value as string[];
+            set { zipPlaInfoParams[5].Value = value; }
         }
         private readonly Tuple<int, int>[] indexLengthPairs;
         private readonly string path;
