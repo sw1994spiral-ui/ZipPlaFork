@@ -2742,6 +2742,10 @@
       <DependentUpon>CatalogForm.cs</DependentUpon>
     </Compile>
     <Compile Include="ZipPlaGenre.cs" />
+    <Compile Include="CatalogForm.Extras.cs">
+      <DependentUpon>CatalogForm.cs</DependentUpon>
+    </Compile>
+    <Compile Include="ZipPlaExtras.cs" />
     <Compile Include="ZipPlaInfo.cs" />
     <Compile Include="ZipPlaLab.cs" />
     <Compile Include="ZipTag.cs" />

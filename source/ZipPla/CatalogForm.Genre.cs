@@ -20,6 +20,8 @@ namespace ZipPla
         private ToolStripMenuItem genreToolStripMenuItem;
         private string[] genreScanCache;
         private string[] genreScanSource;
+        private Dictionary<string, int> genreCountCache;
+        private string[] genreCountSource;
 
         /// <summary>
         /// 現在のカタログ（ZipPathArray）にあるファイル名の g= からジャンルを集める。
@@ -57,6 +59,43 @@ namespace ZipPla
             return genreScanCache;
         }
 
+        /// <summary>
+        /// 現在のカタログにあるジャンルごとの件数（そのジャンルが付いたファイル数）を返す。
+        /// CollectCatalogGenres と同じキャッシュ方式で、ZipPathArray の参照が変わるまで再利用する。
+        /// </summary>
+        private Dictionary<string, int> CollectCatalogGenreCounts()
+        {
+            string[] zpa;
+            lock (ZipPathArrayLocker)
+            {
+                zpa = ZipPathArray;
+            }
+            if (zpa == null) return new Dictionary<string, int>();
+            if (genreCountCache != null && ReferenceEquals(zpa, genreCountSource)) return genreCountCache;
+            var counts = new Dictionary<string, int>();
+            var regex = new System.Text.RegularExpressions.Regex(@"\{zpi\$[^}]*?g=([^;}]+)");
+            foreach (var path in zpa)
+            {
+                if (string.IsNullOrEmpty(path)) continue;
+                var name = Path.GetFileName(path);
+                if (string.IsNullOrEmpty(name)) continue;
+                var match = regex.Match(name);
+                if (!match.Success) continue;
+                var perFile = new HashSet<string>();
+                foreach (var part in match.Groups[1].Value.Split(','))
+                {
+                    var genre = part.Trim();
+                    if (genre.Length == 0 || !perFile.Add(genre)) continue;
+                    int current;
+                    counts.TryGetValue(genre, out current);
+                    counts[genre] = current + 1;
+                }
+            }
+            genreCountSource = zpa;
+            genreCountCache = counts;
+            return genreCountCache;
+        }
+
         /// <summary>メインメニューに「ジャンル」絞り込みメニューを追加する。コンストラクタから1回だけ呼ぶ。</summary>
         private void SetupGenreMenu()
         {
@@ -89,11 +128,18 @@ namespace ZipPla
                 menu.DropDownItems.Add(new ToolStripMenuItem("ファイルの右クリック → タグ → ジャンル編集... から追加できます") { Enabled = false });
                 return;
             }
+            var genreCounts = CollectCatalogGenreCounts();
             foreach (var genre in genres)
             {
                 var captured = genre;
                 var term = ZipGenre.GetFilterTerm(captured);
-                var item = new ToolStripMenuItem(captured.Replace("&", "&&"));
+                int genreCount;
+                var label = captured.Replace("&", "&&");
+                if (genreCounts.TryGetValue(captured, out genreCount) && genreCount > 0)
+                {
+                    label += $"（{genreCount}）";
+                }
+                var item = new ToolStripMenuItem(label);
 
                 var sub = new ToolStripMenuItem[6];
                 sub[0] = new ToolStripMenuItem($"「{captured}」を追加");
@@ -112,6 +158,13 @@ namespace ZipPla
 
                 menu.DropDownItems.Add(item);
             }
+            menu.DropDownItems.Add(new ToolStripSeparator());
+            var multiItem = new ToolStripMenuItem("複数ジャンルで絞り込み...");
+            multiItem.Click += (s, ev) => ShowGenreMultiFilter();
+            menu.DropDownItems.Add(multiItem);
+            var renameItem = new ToolStripMenuItem("ジャンル名の一括変更...");
+            renameItem.Click += (s, ev) => ShowGenreBulkRename();
+            menu.DropDownItems.Add(renameItem);
         }
 
         /// <summary>

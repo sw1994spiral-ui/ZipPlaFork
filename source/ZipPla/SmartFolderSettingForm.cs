@@ -20,6 +20,9 @@ namespace ZipPla
 
         private bool showCanceled = false;
 
+        // ジャンル条件の列は Designer を変更せずコードで追加する（FileSystemCondition.GenreFilter と連動）
+        private DataGridViewTextBoxColumn tbcGenreFilter;
+
         DataGridViewSorter dgvSorter;
         public SmartFolderSettingForm(string smartFolderPath)
         {
@@ -41,6 +44,16 @@ namespace ZipPla
             }
             InitializeComponent();
             DarkTheme.Apply(this);
+
+            // 「ファイルフィルター」の右隣にジャンル条件の列を追加する
+            tbcGenreFilter = new DataGridViewTextBoxColumn
+            {
+                Name = "tbcGenreFilter",
+                HeaderText = "ジャンル（カンマ区切り・すべて含む）",
+                Width = 140,
+                SortMode = DataGridViewColumnSortMode.NotSortable,
+            };
+            dataGridView.Columns.Insert(tbcFileFilter.Index + 1, tbcGenreFilter);
 
             new MessageForwarder(dataGridView, ForwardedMessage.MouseWheel);
 
@@ -279,7 +292,7 @@ namespace ZipPla
                 postAction, replaceFilterToCurrent);
         }
 
-        private DataGridViewRow makeRow(bool essential, string folderPath, string filter)
+        private DataGridViewRow makeRow(bool essential, string folderPath, string filter, string genreFilter = null)
         {
             var row = new DataGridViewRow();
             row.CreateCells(dataGridView);
@@ -289,6 +302,7 @@ namespace ZipPla
             essentialCell.ToolTipText = Message.IfEssentialFolderDoesNotExistErrorWillBeDisplayed;
             cells[tbcFolderPath.Index].Value = folderPath;
             cells[tbcFileFilter.Index].Value = filter;
+            if (tbcGenreFilter != null) cells[tbcGenreFilter.Index].Value = genreFilter;
             return row;
         }
 
@@ -446,27 +460,40 @@ namespace ZipPla
             }
         }
 
+        private SmartFolderItem makeItemFromRow(DataGridViewRow row)
+        {
+            var condition = new FileSystemCondition()
+            {
+                PathFilter = new RegexPathFilter(row.Cells[tbcFileFilter.Index].Value as string)
+            };
+            var genreText = tbcGenreFilter != null ? row.Cells[tbcGenreFilter.Index].Value as string : null;
+            GenreFilter genreFilter;
+            if (!string.IsNullOrWhiteSpace(genreText) && GenreFilter.TryParse(genreText, out genreFilter) && genreFilter.Genres.Length > 0)
+            {
+                condition.GenreFilter = genreFilter;
+            }
+            return new SmartFolderItem()
+            {
+                ResumeOnError = row.Cells[cbcEssential.Index].Value as bool? == false,
+                Path = row.Cells[tbcFolderPath.Index].Value as string,
+                Condition = condition
+            };
+        }
+
         private SmartFolder getCurrentSmartFolder()
         {
             var result = new SmartFolder();
             result.DefaultCondition = null;
             result.Items.AddRange(
                 from DataGridViewRow row in dataGridView.Rows
-                select new SmartFolderItem()
-                {
-                    ResumeOnError = row.Cells[cbcEssential.Index].Value as bool? == false,
-                    Path = row.Cells[tbcFolderPath.Index].Value as string,
-                    Condition = new FileSystemCondition()
-                    {
-                        PathFilter = new RegexPathFilter(row.Cells[tbcFileFilter.Index].Value as string)
-                    }
-                });
+                select makeItemFromRow(row));
             return result;
         }
 
         private void setCurrentSmartFolder(SmartFolder smartFolder)
         {
-            addRows(from item in smartFolder.Items select makeRow(!item.ResumeOnError, item.Path, item.Condition.PathFilter.ToString()),
+            addRows(from item in smartFolder.Items select makeRow(!item.ResumeOnError, item.Path, item.Condition.PathFilter.ToString(),
+                item.Condition.GenreFilter == null ? null : item.Condition.GenreFilter.ToString()),
                 AddRowsPostAction.None, replaceFilterToCurrent: false);
         }
 

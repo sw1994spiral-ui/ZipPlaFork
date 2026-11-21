@@ -220,11 +220,13 @@ namespace ZipPla
         // public field の型 T は全て nullable かつ public static bool TryParse(string s, out T result) を持ちこれが ToString と対応していること
         // また変数名は IgnoreCase の意味で全て異なった名前であること
         public RegexPathFilter PathFilter;
+        public GenreFilter GenreFilter;
 
         public bool Equals(FileSystemCondition other)
         {
             if (other == null) return false;
-            return PathFilter != null ? PathFilter.Equals(other.PathFilter) : other.PathFilter == null;
+            if (PathFilter != null ? !PathFilter.Equals(other.PathFilter) : other.PathFilter != null) return false;
+            return GenreFilter != null ? GenreFilter.Equals(other.GenreFilter) : other.GenreFilter == null;
         }
 
         public override bool Equals(object obj)
@@ -234,7 +236,7 @@ namespace ZipPla
 
         public override int GetHashCode()
         {
-            return PathFilter != null ? PathFilter.GetHashCode() : 0;
+            return (PathFilter != null ? PathFilter.GetHashCode() : 0) ^ (GenreFilter != null ? GenreFilter.GetHashCode() : 0);
         }
 
         public static bool operator ==(FileSystemCondition a, FileSystemCondition b)
@@ -249,7 +251,9 @@ namespace ZipPla
 
         public bool Test(FileSystemInfo info)
         {
-            return PathFilter.Test(info);
+            if (PathFilter != null && !PathFilter.Test(info)) return false;
+            if (GenreFilter != null && !GenreFilter.Test(info)) return false;
+            return true;
         }
 
         private static readonly ClassStreamReaderWriter<FileSystemCondition> rw = new ClassStreamReaderWriter<FileSystemCondition>(
@@ -265,6 +269,79 @@ namespace ZipPla
             rw.ToStreamWriter(w, this);
         }
 
+    }
+
+    /// <summary>
+    /// スマートフォルダのジャンル条件。ファイル名マーカーの g= に、指定したジャンルが
+    /// すべて含まれている場合に一致する。.kdk ファイルには "GenreFilter=催眠,NTR" の形で保存される
+    /// （ClassStreamReaderWriter の要件として TryParse と ToString が対応している）。
+    /// </summary>
+    public class GenreFilter : IEquatable<GenreFilter>
+    {
+        public readonly string[] Genres;
+
+        public GenreFilter(string[] genres)
+        {
+            Genres = genres ?? new string[0];
+        }
+
+        public static bool TryParse(string s, out GenreFilter result)
+        {
+            if (s == null)
+            {
+                result = null;
+                return false;
+            }
+            var genres = new List<string>();
+            foreach (var part in s.Split(','))
+            {
+                var genre = part.Trim();
+                if (genre.Length > 0 && !genres.Contains(genre)) genres.Add(genre);
+            }
+            result = new GenreFilter(genres.ToArray());
+            return true;
+        }
+
+        public override string ToString()
+        {
+            return string.Join(",", Genres);
+        }
+
+        public bool Test(FileSystemInfo info)
+        {
+            if (Genres.Length == 0) return true;
+            if (info == null) return false;
+            string[] genres;
+            try
+            {
+                genres = new ZipPlaInfo(info.FullName).GenreArray;
+            }
+            catch
+            {
+                return false;
+            }
+            if (genres == null) return false;
+            foreach (var genre in Genres)
+            {
+                if (!genres.Contains(genre)) return false;
+            }
+            return true;
+        }
+
+        public bool Equals(GenreFilter other)
+        {
+            return other != null && ToString() == other.ToString();
+        }
+
+        public override bool Equals(object obj)
+        {
+            return Equals(obj as GenreFilter);
+        }
+
+        public override int GetHashCode()
+        {
+            return ToString().GetHashCode();
+        }
     }
 
     public class ClassStreamReaderWriter<T> where T : new()

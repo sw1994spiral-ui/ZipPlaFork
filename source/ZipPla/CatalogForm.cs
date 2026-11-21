@@ -1613,6 +1613,7 @@ namespace ZipPla
             InitializeComponent();
             DarkTheme.Apply(this);
             SetupGenreMenu(); // ジャンル専用機能（試作）: 実装は CatalogForm.Genre.cs
+            SetupExtrasMenu(); // 追加機能（重複チェック・設定の書き出し/読み込み）: 実装は CatalogForm.Extras.cs
 
 
 #if RUNTIME
