@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Drawing;
 using System.Runtime.InteropServices;
 using System.Windows.Forms;
@@ -81,6 +82,9 @@ namespace ZipPla
             form.ForeColor = Foreground;
             TryEnableDarkTitleBar(form);
             TryEnableDarkScrollBars(form);
+
+            // Load以降に追加されるコントロール（ステータスバーのテキストボックス等）にも適用するため、表示時にもう一度走査する
+            form.Shown += (s, e) => ApplyToChildren(form);
             if (!form.IsHandleCreated)
             {
                 form.HandleCreated += (s, e) => TryEnableDarkTitleBar(form);
@@ -130,6 +134,8 @@ namespace ZipPla
             {
                 control.BackColor = InputBackground;
                 control.ForeColor = Foreground;
+                var combo = control as ComboBox;
+                if (combo != null) AttachComboBorderPainter(combo);
                 return;
             }
 
@@ -182,11 +188,39 @@ namespace ZipPla
             if (IsLightText(control.ForeColor)) control.ForeColor = Foreground;
         }
 
+        private static readonly HashSet<Control> borderPainters = new HashSet<Control>();
+
+        /// <summary>コンボボックスのOS描画の枠線の上にダーク色の枠を重ね描きする。</summary>
+        private static void AttachComboBorderPainter(ComboBox combo)
+        {
+            if (!borderPainters.Add(combo)) return;
+            combo.Paint += (s, e) =>
+            {
+                var c = (ComboBox)s;
+                using (var pen = new Pen(BorderColor))
+                {
+                    e.Graphics.DrawRectangle(pen, 0, 0, c.Width - 1, c.Height - 1);
+                }
+            };
+        }
+
         private static void ApplyToolStripItems(ToolStripItemCollection items)
         {
             foreach (ToolStripItem item in items)
             {
                 if (IsLightText(item.ForeColor)) item.ForeColor = Foreground;
+                var textBoxItem = item as ToolStripTextBox;
+                if (textBoxItem != null)
+                {
+                    textBoxItem.BackColor = InputBackground;
+                    textBoxItem.ForeColor = Foreground;
+                }
+                var comboItem = item as ToolStripComboBox;
+                if (comboItem != null)
+                {
+                    comboItem.BackColor = InputBackground;
+                    comboItem.ForeColor = Foreground;
+                }
                 var dropDownItem = item as ToolStripDropDownItem;
                 if (dropDownItem != null && dropDownItem.HasDropDownItems)
                 {
