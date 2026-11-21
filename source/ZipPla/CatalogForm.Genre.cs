@@ -18,6 +18,44 @@ namespace ZipPla
     public partial class CatalogForm
     {
         private ToolStripMenuItem genreToolStripMenuItem;
+        private string[] genreScanCache;
+        private string[] genreScanSource;
+
+        /// <summary>
+        /// 現在のカタログ（ZipPathArray）にあるファイル名の g= からジャンルを集める。
+        /// 同期スクリプト等でファイル名に付けられたジャンルは config のマスターリストに
+        /// 入らないため、メニュー表示用にこちらでも拾う。結果は配列の参照が変わるまでキャッシュする。
+        /// </summary>
+        private string[] CollectCatalogGenres()
+        {
+            string[] zpa;
+            lock (ZipPathArrayLocker)
+            {
+                zpa = ZipPathArray;
+            }
+            if (zpa == null) return new string[0];
+            if (genreScanCache != null && ReferenceEquals(zpa, genreScanSource)) return genreScanCache;
+            var set = new List<string>();
+            var seen = new HashSet<string>();
+            var regex = new System.Text.RegularExpressions.Regex(@"\{zpi\$[^}]*?g=([^;}]+)");
+            foreach (var path in zpa)
+            {
+                if (string.IsNullOrEmpty(path)) continue;
+                var name = Path.GetFileName(path);
+                if (string.IsNullOrEmpty(name)) continue;
+                var match = regex.Match(name);
+                if (!match.Success) continue;
+                foreach (var part in match.Groups[1].Value.Split(','))
+                {
+                    var genre = part.Trim();
+                    if (genre.Length == 0) continue;
+                    if (seen.Add(genre)) set.Add(genre);
+                }
+            }
+            genreScanSource = zpa;
+            genreScanCache = set.ToArray();
+            return genreScanCache;
+        }
 
         /// <summary>メインメニューに「ジャンル」絞り込みメニューを追加する。コンストラクタから1回だけ呼ぶ。</summary>
         private void SetupGenreMenu()
@@ -36,8 +74,16 @@ namespace ZipPla
         {
             var menu = genreToolStripMenuItem;
             menu.DropDownItems.Clear();
-            var genres = ZipGenre.GetMasterGenres();
-            if (genres.Length == 0)
+            var genres = new List<string>();
+            foreach (var genre in ZipGenre.GetMasterGenres())
+            {
+                if (!genres.Contains(genre)) genres.Add(genre);
+            }
+            foreach (var genre in CollectCatalogGenres())
+            {
+                if (!genres.Contains(genre)) genres.Add(genre);
+            }
+            if (genres.Count == 0)
             {
                 menu.DropDownItems.Add(new ToolStripMenuItem("（ジャンルはまだありません）") { Enabled = false });
                 menu.DropDownItems.Add(new ToolStripMenuItem("ファイルの右クリック → タグ → ジャンル編集... から追加できます") { Enabled = false });
