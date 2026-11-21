@@ -56,6 +56,22 @@ namespace ZipPla
             }
         }
 
+        /// <summary>
+        /// カタログのプロファイルカラー（背景色）をダークモード用に調整する。
+        /// 明るい色は色味を残したまま暗く落とし、既に暗い色はそのまま使う。
+        /// ダークモード無効時は何もしない。
+        /// </summary>
+        public static Color AdjustProfileColor(Color color)
+        {
+            if (!Enabled) return color;
+            var luminance = 0.299 * color.R + 0.587 * color.G + 0.114 * color.B;
+            if (luminance <= 150) return color;
+            return Color.FromArgb(color.A,
+                Math.Max(24, color.R / 5),
+                Math.Max(24, color.G / 5),
+                Math.Max(24, color.B / 5));
+        }
+
         /// <summary>フォームとその子コントロールすべてにダーク配色を適用する。無効時は何もしない。</summary>
         public static void Apply(Form form)
         {
