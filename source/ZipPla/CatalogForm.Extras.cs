@@ -1,8 +1,9 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text.RegularExpressions;
+using System.Threading.Tasks;
 using System.Windows.Forms;
 using System.Xml.Linq;
 
@@ -25,6 +26,10 @@ namespace ZipPla
             exportItem.Click += (s, ev) => ExportConfig();
             var importItem = new ToolStripMenuItem("設定とブックマークを読み込み...");
             importItem.Click += (s, ev) => ImportConfig();
+            var bulkThumbItem = new ToolStripMenuItem("全サムネイルを一括作成...");
+            bulkThumbItem.Click += (s, ev) => ShowBulkCreateThumbnails();
+            menu.DropDownItems.Add(bulkThumbItem);
+            menu.DropDownItems.Add(new ToolStripSeparator());
             menu.DropDownItems.Add(dupItem);
             menu.DropDownItems.Add(new ToolStripSeparator());
             menu.DropDownItems.Add(exportItem);
@@ -285,6 +290,101 @@ namespace ZipPla
                     MoveLocation(ApplicationProviderUser.DragAndDrop, location);
                 }
             }
+        }
+
+
+        private bool bulkThumbnailRunning;
+
+        /// <summary>
+        /// 「ツール」メニュー →「全サムネイルを一括作成...」。
+        /// 現在のカタログ全アイテムについて GetThumbnail を実行し、サムネイルキャッシュへ
+        /// 一括で書き込む。スクロールして表示しなくても全件のサムネイルが用意される。
+        /// 進捗は ThumbnailBulkForm に表示し、キャンセルで中断できる。
+        /// </summary>
+        private async void ShowBulkCreateThumbnails()
+        {
+            if (CreatingZipPathArray || bulkThumbnailRunning) return;
+            var targets = new List<Tuple<string, string, bool>>();
+            lock (ZipPathArrayLocker)
+            {
+                var zpa = ZipPathArray;
+                var zna = ZipNameArray;
+                if (zpa == null || zna == null) return;
+                for (var i = 0; i < zpa.Length; i++)
+                {
+                    var path = zpa[i];
+                    if (string.IsNullOrEmpty(path)) continue;
+                    if (path.IndexOf(Path.AltDirectorySeparatorChar) >= 0) continue; // 書庫内などの仮想パスは対象外
+                    var name = i < zna.Length ? zna[i] : null;
+                    if (string.IsNullOrEmpty(name)) continue;
+                    var isDir = name.Last() == Path.DirectorySeparatorChar;
+                    targets.Add(Tuple.Create(path, name.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar), isDir));
+                }
+            }
+            if (targets.Count == 0)
+            {
+                MessageBox.Show(this, "対象がありません。", null, MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+
+            bulkThumbnailRunning = true;
+            AllowFullpower = false;
+            var form = new ThumbnailBulkForm(targets.Count);
+            form.Show(this);
+            var done = 0;
+            var succeeded = 0;
+            var failed = 0;
+            try
+            {
+                foreach (var target in targets)
+                {
+                    if (form.IsDisposed || form.CancelRequested) break;
+                    form.SetProgress(done, targets.Count, target.Item2);
+                    var path = target.Item1;
+                    var isDir = target.Item3;
+                    var result = await Task.Run(() =>
+                    {
+                        try
+                        {
+                            bool plainFile;
+                            int filecount;
+                            LoadResult loadError;
+                            long fileSize;
+                            ImageInfo imageInfo;
+                            MovieInfo movieInfo = null;
+                            using (var bmp = GetThumbnail(path, isDir, null, out plainFile, out filecount, out loadError, out fileSize, out imageInfo, ref movieInfo, false))
+                            {
+                            }
+                            return loadError;
+                        }
+                        catch
+                        {
+                            return LoadResult.LoadError;
+                        }
+                    });
+                    if (result == LoadResult.Success) succeeded++;
+                    else failed++;
+                    done++;
+                }
+            }
+            finally
+            {
+                bulkThumbnailRunning = false;
+                AllowFullpower = true;
+            }
+            if (!form.IsDisposed)
+            {
+                form.SetProgress(done, targets.Count, null);
+                if (form.CancelRequested && done < targets.Count)
+                {
+                    form.Finish($"キャンセルしました（{done} / {targets.Count} 件処理、成功 {succeeded} 件、失敗 {failed} 件）。");
+                }
+                else
+                {
+                    form.Finish($"完了しました（全 {targets.Count} 件、成功 {succeeded} 件、失敗 {failed} 件）。");
+                }
+            }
+            tvCatalog.Invalidate();
         }
 
         private static string GetConfigXmlPath()

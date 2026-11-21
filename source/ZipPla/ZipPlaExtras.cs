@@ -1,4 +1,4 @@
-using Microsoft.VisualBasic.FileIO;
+﻿using Microsoft.VisualBasic.FileIO;
 using System;
 using System.Collections.Generic;
 using System.Drawing;
@@ -351,6 +351,86 @@ namespace ZipPla
             {
                 MessageBox.Show(this, $"{deletedPaths.Count} 件をごみ箱へ移動しました。", null, MessageBoxButtons.OK, MessageBoxIcon.Information);
             }
+        }
+    }
+
+    /// <summary>
+    /// サムネイル一括作成の進捗ダイアログ。進捗バー・件数・現在のファイル名を表示する。
+    /// キャンセルボタン（または閉じる操作）で中断を要求でき、実際の停止は呼び出し側が
+    /// CancelRequested を見て行う。完了後は Finish で結果を表示し、ボタンが「閉じる」に変わる。
+    /// </summary>
+    public class ThumbnailBulkForm : Form
+    {
+        private readonly Label lblStatus;
+        private readonly Label lblCurrent;
+        private readonly ProgressBar bar;
+        private readonly Button btnCancel;
+        private bool finished;
+
+        public bool CancelRequested { get; private set; }
+
+        public ThumbnailBulkForm(int total)
+        {
+            Text = "全サムネイルを一括作成";
+            FormBorderStyle = FormBorderStyle.FixedDialog;
+            StartPosition = FormStartPosition.CenterParent;
+            MinimizeBox = false;
+            MaximizeBox = false;
+            ShowInTaskbar = false;
+            ClientSize = new Size(420, 132);
+
+            lblStatus = new Label { Location = new Point(12, 10), Size = new Size(396, 20), Text = "準備中..." };
+            bar = new ProgressBar { Location = new Point(12, 34), Size = new Size(396, 20), Minimum = 0, Maximum = Math.Max(1, total), Value = 0 };
+            lblCurrent = new Label { Location = new Point(12, 60), Size = new Size(396, 20), AutoEllipsis = true, Text = "" };
+            btnCancel = new Button { Location = new Point(168, 92), Size = new Size(84, 28), Text = "キャンセル" };
+            btnCancel.Click += (sender, ev) =>
+            {
+                if (finished)
+                {
+                    Close();
+                }
+                else
+                {
+                    CancelRequested = true;
+                    btnCancel.Enabled = false;
+                    lblStatus.Text = "キャンセルしています...";
+                }
+            };
+            Controls.Add(lblStatus);
+            Controls.Add(bar);
+            Controls.Add(lblCurrent);
+            Controls.Add(btnCancel);
+
+            FormClosing += (sender, ev) =>
+            {
+                if (!finished)
+                {
+                    // 実行中の閉じる操作はキャンセル要求として扱い、フォーム自体は閉じない
+                    CancelRequested = true;
+                    btnCancel.Enabled = false;
+                    lblStatus.Text = "キャンセルしています...";
+                    ev.Cancel = true;
+                }
+            };
+            DarkTheme.Apply(this);
+        }
+
+        public void SetProgress(int done, int total, string currentName)
+        {
+            bar.Maximum = Math.Max(1, total);
+            bar.Value = Math.Min(done, bar.Maximum);
+            var pct = total > 0 ? (int)(done * 100.0 / total) : 0;
+            lblStatus.Text = $"作成中... {done} / {total} 件（{pct}%）";
+            lblCurrent.Text = currentName ?? "";
+        }
+
+        public void Finish(string summary)
+        {
+            finished = true;
+            lblStatus.Text = summary;
+            lblCurrent.Text = "";
+            btnCancel.Text = "閉じる";
+            btnCancel.Enabled = true;
         }
     }
 }
