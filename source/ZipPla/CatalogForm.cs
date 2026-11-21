@@ -6555,9 +6555,8 @@ namespace ZipPla
 
         private static void drawFileImage(Graphics g, Rectangle rect, Font font, Brush foreBrush, string text, string iconPath, DateTime lastWriteTime, Brush backBrush, bool isDir, bool isExist)
         {
-            //サムネイル読み込み処理を雑に書き換えたため、内部状態ではサムネイル読み込みが完了していないことになっている。
-            //サムネイルの上にファイルアイコンが重なって表示されてしまうため、ファイルアイコンそのものを描画しないように変更した。
-            return;
+            // ダークモード版で復活: フォルダ等のプレースホルダタイルにアイコンと名前を描く（本家 ZipPla の挙動）。
+            // 呼び出し側が「サムネイル画像がないアイテム」だけに限定しているため、実サムネイルへの重なり描画は起きない。
             try
             {
                 //var icon = iconPath != null ? FileTypeManager.GetLargeIconBitmap(iconPath, useFileAttrinutes: !isExist) : null;
@@ -24772,8 +24771,9 @@ namespace ZipPla
                     }
                     if (cond == LoadResult.FileNotFound || cond == LoadResult.LoadError || cond == LoadResult.NotYet)
                     {
-                        var str = showFilenameToolStripMenuItem.Checked ? null : name;
-                        var iconPath = !IsVirtualPath ? path : null;
+                        // フォルダは「ファイル名を表示」の設定によらず、タイルの中に名前を出す（本家 ZipPla の見た目に合わせる）
+                        var str = isDir || !showFilenameToolStripMenuItem.Checked ? name : null;
+                        var iconPath = isDir || !IsVirtualPath ? path : null;
                         if (cond != LoadResult.LoadError)
                         {
                             //using (var b = GetFileDirectoryForeBrush(path))
