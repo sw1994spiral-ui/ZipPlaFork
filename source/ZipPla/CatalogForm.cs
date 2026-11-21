@@ -16626,7 +16626,7 @@ namespace ZipPla
         }
 
         private SearchManager cbFilter_SearchManager;
-        private static readonly Color WindowColor = SystemColors.Window;// Color.FromKnownColor(KnownColor.Window);
+        private static readonly Color WindowColor = DarkTheme.Enabled ? DarkTheme.InputBackground : SystemColors.Window;// Color.FromKnownColor(KnownColor.Window);
         private static readonly Color InvalidColor = SystemColorsWindowIsNearToWhite ? Color.LightGray : Color.Gray;
         private static readonly Color ErrorColor = SystemColorsWindowIsNearToWhite ? Color.Pink : Color.DarkRed;
         private static readonly Color AliasColor = SystemColorsWindowIsNearToWhite ? Color.FromArgb(192, 255, 255) : Color.FromArgb(0, 64, 64);
@@ -30618,6 +30618,7 @@ namespace ZipPla
 
             frameBrush = new SolidBrush(frameColor);//new SolidBrush(Color.LightSalmon);
             backBrush = new SolidBrush(BackColor);
+            if (DarkTheme.Enabled) SetBackAndForeColor(DarkTheme.ControlBackground);
             selectedForeColor = ZipTag.GetForeColor(frameColor);
 
             // デフォルトのサムネイルのサイズを設定

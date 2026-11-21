@@ -574,7 +574,8 @@ namespace ZipPla
 
                 var button = new DirectoryButton(ownerForm);
                 button.FlatStyle = FlatStyle.Popup;
-                button.BackColor = SystemColors.Window;
+                button.BackColor = DarkTheme.Enabled ? DarkTheme.InputBackground : SystemColors.Window;
+                if (DarkTheme.Enabled) button.ForeColor = DarkTheme.Foreground;
                 button.Size = new Size();
                 button.AutoSize = true;
                 button.Path = path;
@@ -625,7 +626,7 @@ namespace ZipPla
                 
                 var separatorButton = new PushButton();
                 separatorButton.FlatStyle = FlatStyle.Popup;
-                separatorButton.BackColor = Color.FromKnownColor(KnownColor.Control);
+                separatorButton.BackColor = DarkTheme.Enabled ? DarkTheme.ControlBackground : Color.FromKnownColor(KnownColor.Control);
                 //separatorButton.Size = new Size((10 * buttonHeight + 1) / 14, buttonHeight);
                 separatorButton.Size = new Size(buttonHeight * 3 / 4, buttonHeight);
                 //if (RightTriangle == null) RightTriangle = getTriangle(separatorButton.ClientSize, Direction.Right);
@@ -713,7 +714,7 @@ namespace ZipPla
             {
                 var separatorButton = new PushButton();
                 separatorButton.FlatStyle = FlatStyle.Popup;
-                separatorButton.BackColor = Color.FromKnownColor(KnownColor.Control);
+                separatorButton.BackColor = DarkTheme.Enabled ? DarkTheme.ControlBackground : Color.FromKnownColor(KnownColor.Control);
                 if (buttonHeight > 0)
                 {
                     separatorButton.Size = new Size(buttonHeight * 3 / 4, buttonHeight);
@@ -820,8 +821,8 @@ namespace ZipPla
             // ボタンのデフォルト値であると確認済み
             try
             {
-                control.BackColor = SystemColors.Window;
-                control.ForeColor = SystemColors.ControlText;
+                control.BackColor = DarkTheme.Enabled ? DarkTheme.InputBackground : SystemColors.Window;
+                control.ForeColor = DarkTheme.Enabled ? DarkTheme.Foreground : SystemColors.ControlText;
             }
             catch { } // ObjectDisposedException を想定
         }
@@ -1117,7 +1118,7 @@ namespace ZipPla
         {
             if (e == null || scaledPoints == null) return;
             var g = e.Graphics;
-            var b = control.Enabled ? SystemBrushes.ControlText : Brushes.LightGray; //SystemBrushes.GrayText;
+            var b = control.Enabled ? (DarkTheme.Enabled ? Brushes.White : SystemBrushes.ControlText) : Brushes.LightGray; //SystemBrushes.GrayText;
             var rect = control.ClientRectangle;
             int x = rect.X, y = rect.Y, w = rect.Width, h = rect.Height;
             var points = (from p in scaledPoints select new PointF(x + p.X * w - 1, y + p.Y * h - 1)).ToArray();
