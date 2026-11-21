@@ -1612,6 +1612,7 @@ namespace ZipPla
 #endif
             InitializeComponent();
             DarkTheme.Apply(this);
+            SetupGenreMenu(); // ジャンル専用機能（試作）: 実装は CatalogForm.Genre.cs
 
 
 #if RUNTIME
@@ -12857,6 +12858,15 @@ namespace ZipPla
                     addTagsFromFileName.Enabled = false;
                 }
                 tagToolStripMenuItem.DropDownItems.Add(addTagsFromFileName);
+
+                // ジャンル専用機能（試作）: 実装は CatalogForm.Genre.cs の ShowGenreEditorForContextMenu
+                tagToolStripMenuItem.DropDownItems.Add(new ToolStripSeparator());
+                var genreEditor = new ToolStripMenuItem("ジャンル編集...");
+                genreEditor.Click += (sender2, e2) =>
+                {
+                    ShowGenreEditorForContextMenu(selectedIndices, selectedPathArray, selectedNameArray);
+                };
+                tagToolStripMenuItem.DropDownItems.Add(genreEditor);
             }
             else
             {
