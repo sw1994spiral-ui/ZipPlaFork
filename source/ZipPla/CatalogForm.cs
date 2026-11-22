@@ -381,6 +381,8 @@ namespace ZipPla
                     case SortMode.NameInAsc:
                     case SortMode.RatingInAsc:
                     case SortMode.SizeInAsc:
+                    case SortMode.OpenCountInAsc:
+                    case SortMode.LastOpenedInAsc:
                     case SortMode.TypeInAsc:
                     case SortMode.VFPSInAsc:
                     case SortMode.VHeightInAsc:
@@ -3891,6 +3893,10 @@ namespace ZipPla
             cbSortBy.Items[(int)SortMode.ModifiedInDesc] = Message.ModifiedInDesc;
             cbSortBy.Items[(int)SortMode.SizeInAsc] = Message.SizeInAsc;
             cbSortBy.Items[(int)SortMode.SizeInDesc] = Message.SizeInDesc;
+            cbSortBy.Items[(int)SortMode.OpenCountInDesc] = "開いた回数順（多い順）";
+            cbSortBy.Items[(int)SortMode.OpenCountInAsc] = "開いた回数順（少ない順）";
+            cbSortBy.Items[(int)SortMode.LastOpenedInDesc] = "最近開いた順";
+            cbSortBy.Items[(int)SortMode.LastOpenedInAsc] = "開いた日時順（古い順）";
             cbSortBy.Items[(int)SortMode.Random] = Message.Random;
             cbSortBy_SelectedValueChanged_Stop = false;
 
@@ -14282,6 +14288,32 @@ namespace ZipPla
                             }
                         }
                         result = order.OrderByDescending(x => sizeArray[x]).ToArray();
+                        break;
+                    }
+                case SortMode.OpenCountInDesc:
+                case SortMode.OpenCountInAsc:
+                    {
+                        var countArray = new int[count];
+                        for (var i = 0; i < count; i++)
+                        {
+                            countArray[i] = OpenStats.GetCount(ZipPathArray[i]);
+                        }
+                        result = localSortMode == SortMode.OpenCountInDesc
+                            ? order.OrderByDescending(x => countArray[x]).ToArray()
+                            : order.OrderBy(x => countArray[x]).ToArray();
+                        break;
+                    }
+                case SortMode.LastOpenedInDesc:
+                case SortMode.LastOpenedInAsc:
+                    {
+                        var lastArray = new DateTime[count];
+                        for (var i = 0; i < count; i++)
+                        {
+                            lastArray[i] = OpenStats.GetLastOpened(ZipPathArray[i]);
+                        }
+                        result = localSortMode == SortMode.LastOpenedInDesc
+                            ? order.OrderByDescending(x => lastArray[x]).ToArray()
+                            : order.OrderBy(x => lastArray[x]).ToArray();
                         break;
                     }
                 case SortMode.VPageInAsc:
@@ -29680,7 +29712,7 @@ namespace ZipPla
     public enum ClipMode { Letterbox, PanAndScan, PlaClip }
     public enum SortMode
     {
-        TypeInAsc, TypeInDesc, NameInAsc, NameInDesc, RatingInAsc, RatingInDesc, CreatedInAsc, CreatedInDesc, AccessedInAsc, AccessedInDesc, ModifiedInAsc, ModifiedInDesc, SizeInAsc, SizeInDesc, Random,
+        TypeInAsc, TypeInDesc, NameInAsc, NameInDesc, RatingInAsc, RatingInDesc, CreatedInAsc, CreatedInDesc, AccessedInAsc, AccessedInDesc, ModifiedInAsc, ModifiedInDesc, SizeInAsc, SizeInDesc, OpenCountInDesc, OpenCountInAsc, LastOpenedInDesc, LastOpenedInAsc, Random,
         VPageInAsc, VPageInDesc, VResolutionInAsc, VResolutionInDesc, VRatioInAsc, VRatioInDesc, VWidthInAsc, VWidthInDesc, VHeightInAsc, VHeightInDesc, VLengthInAsc, VLengthInDesc, VFPSInAsc, VFPSInDesc// 揮発性（volatility）ソートは Random のあとに書く
     }
     public enum SubfolderMode { Display, DisplayHeader, Ignore, Search, DisplayAndSearch, DisplayHeaderAndSearch }

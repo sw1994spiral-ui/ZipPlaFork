@@ -2329,6 +2329,12 @@ namespace ZipPla
                 }
             }
 
+            // 開いた回数を記録（追加機能：カタログの「開いた回数順／最近開いた順」用）
+            if (ipcLookAheadInfo == null && !forLookAhead)
+            {
+                OpenStats.RecordOpen(path);
+            }
+
             string name = null;
             currentStartingFilePath = path;
 
