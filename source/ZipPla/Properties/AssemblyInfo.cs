@@ -38,6 +38,6 @@ using System.Runtime.InteropServices;
 static class ZipPlaAssembly
 {
     public const string Version = "1.7.2.9";
-    public const string BetaString = null;
+    public const string BetaString = "optimize";
     //public const string BetaString = "beta";
 }

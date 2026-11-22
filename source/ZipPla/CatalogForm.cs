@@ -30287,7 +30287,16 @@ namespace ZipPla
 
     public class ThumbViewerItem : IDisposable
     {
-        static readonly SemaphoreSlim semaphore = new SemaphoreSlim(1, 1);
+        static readonly int thumbnailLoadConcurrency = GetThumbnailLoadConcurrency();
+        static readonly SemaphoreSlim semaphore = new SemaphoreSlim(thumbnailLoadConcurrency, thumbnailLoadConcurrency);
+
+        private static int GetThumbnailLoadConcurrency()
+        {
+            var configured = 0;
+            try { configured = new GeneralConfig().ThumbnailLoadThreads; } catch { }
+            if (configured > 0) return Math.Min(configured, 16);
+            return Math.Min(4, Math.Max(2, Environment.ProcessorCount / 2));
+        }
         public CatalogForm OwnerCatalog { get; set; }
         private ThumbViewer owner = null;
         public ThumbViewer Owner { get { return owner; } }
