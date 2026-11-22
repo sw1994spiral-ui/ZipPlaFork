@@ -211,20 +211,79 @@ namespace ZipPla
             if (IsLightText(control.ForeColor)) control.ForeColor = Foreground;
         }
 
-        private static readonly HashSet<Control> borderPainters = new HashSet<Control>();
+        private static readonly Dictionary<ComboBox, DarkComboPainter> comboPainters = new Dictionary<ComboBox, DarkComboPainter>();
+        private static readonly HashSet<ComboBox> comboPainterHooked = new HashSet<ComboBox>();
 
-        /// <summary>コンボボックスのOS描画の枠線の上にダーク色の枠を重ね描きする。</summary>
+        /// <summary>
+        /// コンボボックスのOS描画の上に、ダーク色の枠と▼ボタンを重ね描きする。
+        /// ComboBox の Paint イベントでは OS 描画（白い▼ボタンと枠）に勝てないため、
+        /// NativeWindow で WM_PAINT の後処理として上描きする。ハンドル再作成にも追随する。
+        /// </summary>
         private static void AttachComboBorderPainter(ComboBox combo)
         {
-            if (!borderPainters.Add(combo)) return;
-            combo.Paint += (s, e) =>
+            if (comboPainterHooked.Add(combo))
             {
-                var c = (ComboBox)s;
-                using (var pen = new Pen(BorderColor))
+                combo.HandleCreated += (s, e) => AttachComboPainterCore((ComboBox)s);
+                combo.HandleDestroyed += (s, e) =>
                 {
-                    e.Graphics.DrawRectangle(pen, 0, 0, c.Width - 1, c.Height - 1);
+                    DarkComboPainter old;
+                    if (comboPainters.TryGetValue((ComboBox)s, out old))
+                    {
+                        old.ReleaseHandle();
+                        comboPainters.Remove((ComboBox)s);
+                    }
+                };
+            }
+            AttachComboPainterCore(combo);
+        }
+
+        private static void AttachComboPainterCore(ComboBox combo)
+        {
+            if (!combo.IsHandleCreated) return;
+            DarkComboPainter existing;
+            if (comboPainters.TryGetValue(combo, out existing))
+            {
+                if (existing.Handle == combo.Handle) return;
+                existing.ReleaseHandle();
+                comboPainters.Remove(combo);
+            }
+            comboPainters[combo] = new DarkComboPainter(combo);
+        }
+
+        /// <summary>コンボボックスの▼ボタンと枠をダーク色で上描きする NativeWindow。</summary>
+        private sealed class DarkComboPainter : NativeWindow
+        {
+            private readonly ComboBox combo;
+
+            public DarkComboPainter(ComboBox combo)
+            {
+                this.combo = combo;
+                AssignHandle(combo.Handle);
+            }
+
+            protected override void WndProc(ref System.Windows.Forms.Message m)
+            {
+                base.WndProc(ref m);
+                if (m.Msg != 0x000F) return; // WM_PAINT の後だけ上描きする
+                try
+                {
+                    using (var g = Graphics.FromHwnd(combo.Handle))
+                    {
+                        var w = combo.Width;
+                        var h = combo.Height;
+                        if (w <= 0 || h <= 0) return;
+                        var buttonWidth = SystemInformation.VerticalScrollBarWidth;
+                        var buttonRect = new Rectangle(w - buttonWidth, 0, buttonWidth, h);
+                        using (var brush = new SolidBrush(ControlBackground)) g.FillRectangle(brush, buttonRect);
+                        var cx = buttonRect.Left + buttonRect.Width / 2;
+                        var cy = buttonRect.Top + buttonRect.Height / 2;
+                        var points = new[] { new Point(cx - 4, cy - 2), new Point(cx + 5, cy - 2), new Point(cx, cy + 3) };
+                        using (var brush = new SolidBrush(Foreground)) g.FillPolygon(brush, points);
+                        using (var pen = new Pen(BorderColor)) g.DrawRectangle(pen, 0, 0, w - 1, h - 1);
+                    }
                 }
-            };
+                catch { /* 上描きに失敗してもアプリは止めない */ }
+            }
         }
 
         private static void ApplyToolStripItems(ToolStripItemCollection items)
