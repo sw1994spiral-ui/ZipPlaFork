@@ -73,10 +73,25 @@ namespace ZipPla
                 Math.Max(24, color.B / 5));
         }
 
+        private static Font appFont;
+
+        /// <summary>
+        /// アプリ全体のフォントを Meiryo UI 9pt に統一する（ダークモードの有無にかかわらず適用）。
+        /// フォームの Font を差し替えると、個別にフォント指定されていない子コントロールへ自動で伝播する。
+        /// </summary>
+        public static void ApplyAppFont(Form form)
+        {
+            if (form == null) return;
+            if (appFont == null) appFont = new Font("Meiryo UI", 9F, FontStyle.Regular, GraphicsUnit.Point, ((byte)(128)));
+            form.Font = appFont;
+        }
+
         /// <summary>フォームとその子コントロールすべてにダーク配色を適用する。無効時は何もしない。</summary>
         public static void Apply(Form form)
         {
-            if (!Enabled || form == null) return;
+            if (form == null) return;
+            ApplyAppFont(form);
+            if (!Enabled) return;
 
             form.BackColor = FormBackground;
             form.ForeColor = Foreground;
@@ -135,7 +150,12 @@ namespace ZipPla
                 control.BackColor = InputBackground;
                 control.ForeColor = Foreground;
                 var combo = control as ComboBox;
-                if (combo != null) AttachComboBorderPainter(combo);
+                if (combo != null)
+                {
+                    // 選択専用（DropDownList）のコンボは標準スタイルだと背景色が効かず白くなるため、フラット表示にする
+                    combo.FlatStyle = FlatStyle.Flat;
+                    AttachComboBorderPainter(combo);
+                }
                 return;
             }
 
@@ -162,6 +182,9 @@ namespace ZipPla
                 grid.BackgroundColor = FormBackground;
                 grid.GridColor = BorderColor;
                 grid.EnableHeadersVisualStyles = false;
+                // ヘッダーの枠を単線にすると GridColor（グレー）で描かれる。既定の立体枠は白く目立つため切り替える
+                grid.ColumnHeadersBorderStyle = DataGridViewHeaderBorderStyle.Single;
+                grid.RowHeadersBorderStyle = DataGridViewHeaderBorderStyle.Single;
                 grid.ColumnHeadersDefaultCellStyle.BackColor = ControlBackground;
                 grid.ColumnHeadersDefaultCellStyle.ForeColor = Foreground;
                 grid.RowHeadersDefaultCellStyle.BackColor = ControlBackground;
