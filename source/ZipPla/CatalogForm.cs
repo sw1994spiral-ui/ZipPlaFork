@@ -24785,6 +24785,10 @@ namespace ZipPla
 
                     var isDir = name.EndsWith(Path.DirectorySeparatorChar.ToString());
 
+                    // サムネイル画像が既に読み込まれているか（未読込の本でも表紙だけ先に表示されることがある）
+                    var itemForThumbCheck = e.DataIndex >= 0 && e.DataIndex < sender.Count ? sender[e.DataIndex] : null;
+                    var hasThumbnail = itemForThumbCheck != null && itemForThumbCheck.Image != null;
+
                     var iconSize = new Size(0, 0);
                     var IsVirtualPath = InMovie || InDocument || path.Contains(Path.AltDirectorySeparatorChar);
                     var thumbRect = e.ThumbnailRectangle;
@@ -24806,7 +24810,9 @@ namespace ZipPla
                         // フォルダは「ファイル名を表示」の設定によらず、タイルの中に名前を出す（本家 ZipPla の見た目に合わせる）
                         var str = isDir || !showFilenameToolStripMenuItem.Checked ? name : null;
                         var iconPath = isDir || !IsVirtualPath ? path : null;
-                        if (cond != LoadResult.LoadError)
+                        // サムネイル画像がある本（フォルダ以外）には、未読込でもアイコン＋名前を重ねない
+                        var skipOverlay = cond == LoadResult.NotYet && !isDir && hasThumbnail;
+                        if (!skipOverlay && cond != LoadResult.LoadError)
                         {
                             //using (var b = GetFileDirectoryForeBrush(path))
                             var b = GetFileDirectoryForeBrush(path);
@@ -24814,7 +24820,7 @@ namespace ZipPla
                                 drawFileImage(e.Graphics, thumbRect, tvCatalog.Font, b/*Brushes.Black*/, str, iconPath, lastWriteTime, null, isDir, isExist: InDirectoryVirtualDirectoryOrSmartDirectory);
                             }
                         }
-                        else
+                        else if (!skipOverlay)
                         {
                             drawFileImage(e.Graphics, thumbRect, tvCatalog.Font, Brushes.Blue, str, iconPath, lastWriteTime, Brushes.Yellow, isDir, isExist: InDirectoryVirtualDirectoryOrSmartDirectory);
                         }
