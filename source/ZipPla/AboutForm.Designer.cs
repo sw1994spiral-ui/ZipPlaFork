@@ -83,7 +83,7 @@
             // lbZipPla
             // 
             this.lbZipPla.AutoSize = true;
-            this.lbZipPla.Font = new System.Drawing.Font("Meiryo UI", 27.75F, System.Drawing.FontStyle.Bold, System.Drawing.GraphicsUnit.Point, ((byte)(128)));
+            this.lbZipPla.Font = new System.Drawing.Font("Yu Gothic UI", 27.75F, System.Drawing.FontStyle.Bold, System.Drawing.GraphicsUnit.Point, ((byte)(128)));
             this.lbZipPla.Location = new System.Drawing.Point(169, 58);
             this.lbZipPla.Name = "lbZipPla";
             this.lbZipPla.Size = new System.Drawing.Size(119, 37);
@@ -93,7 +93,7 @@
             // lbVersion
             // 
             this.lbVersion.AutoSize = true;
-            this.lbVersion.Font = new System.Drawing.Font("Meiryo UI", 12F, System.Drawing.FontStyle.Bold, System.Drawing.GraphicsUnit.Point, ((byte)(128)));
+            this.lbVersion.Font = new System.Drawing.Font("Yu Gothic UI", 12F, System.Drawing.FontStyle.Bold, System.Drawing.GraphicsUnit.Point, ((byte)(128)));
             this.lbVersion.Location = new System.Drawing.Point(298, 76);
             this.lbVersion.Name = "lbVersion";
             this.lbVersion.Size = new System.Drawing.Size(160, 16);

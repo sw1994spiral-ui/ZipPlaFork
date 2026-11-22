@@ -28,6 +28,10 @@ namespace ZipPla
         public static readonly Color DisabledForeground = Color.FromArgb(133, 133, 133);
         public static readonly Color BorderColor = Color.FromArgb(63, 63, 70);          // #3F3F46
         public static readonly Color Accent = Color.FromArgb(0, 122, 204);              // #007ACC
+        public static readonly Color SelectionColor = Color.FromArgb(65, 88, 110);      // #41586E 選択色（エクスプローラ風の青グレー）
+
+        public static readonly Brush SelectionBrush = new SolidBrush(SelectionColor);
+        public static readonly Brush ForegroundBrush = new SolidBrush(Foreground);
 
         private static bool? enabledCache;
 
@@ -76,13 +80,13 @@ namespace ZipPla
         private static Font appFont;
 
         /// <summary>
-        /// アプリ全体のフォントを Meiryo UI 9pt に統一する（ダークモードの有無にかかわらず適用）。
+        /// アプリ全体のフォントを Yu Gothic UI 9pt に統一する（ダークモードの有無にかかわらず適用）。
         /// フォームの Font を差し替えると、個別にフォント指定されていない子コントロールへ自動で伝播する。
         /// </summary>
         public static void ApplyAppFont(Form form)
         {
             if (form == null) return;
-            if (appFont == null) appFont = new Font("Meiryo UI", 9F, FontStyle.Regular, GraphicsUnit.Point, ((byte)(128)));
+            if (appFont == null) appFont = new Font("Yu Gothic UI", 9F, FontStyle.Regular, GraphicsUnit.Point, ((byte)(128)));
             form.Font = appFont;
         }
 
@@ -181,6 +185,13 @@ namespace ZipPla
             {
                 grid.BackgroundColor = FormBackground;
                 grid.GridColor = BorderColor;
+                grid.DefaultCellStyle.SelectionBackColor = SelectionColor;
+                grid.DefaultCellStyle.SelectionForeColor = Color.White;
+                foreach (DataGridViewColumn column in grid.Columns)
+                {
+                    column.DefaultCellStyle.SelectionBackColor = SelectionColor;
+                    column.DefaultCellStyle.SelectionForeColor = Color.White;
+                }
                 grid.EnableHeadersVisualStyles = false;
                 // ヘッダーの枠を単線にすると GridColor（グレー）で描かれる。既定の立体枠は白く目立つため切り替える
                 grid.ColumnHeadersBorderStyle = DataGridViewHeaderBorderStyle.Single;
@@ -196,6 +207,10 @@ namespace ZipPla
                 // 選択色などアプリ側で意味を持つ色は変更しない
                 return;
             }
+
+            // サムネイル表示の選択枠色をダーク用の青グレーに差し替える（地色・文字色は末尾の汎用処理に任せる）
+            var thumbViewer = control as ThumbViewer;
+            if (thumbViewer != null) thumbViewer.FrameColor = SelectionColor;
 
             var button = control as Button;
             if (button != null)

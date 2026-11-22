@@ -23048,7 +23048,7 @@ namespace ZipPla
 
             if (selected)
             {
-                color = SystemColors.Highlight;
+                color = DarkTheme.Enabled ? DarkTheme.SelectionColor : SystemColors.Highlight;
             }
             else if (aliasesToFilteringStrings != null && aliasesToFilteringStrings.ContainsKey(text))
             {
@@ -23056,14 +23056,14 @@ namespace ZipPla
             }
             else
             {
-                color = SystemColors.Window;
+                color = DarkTheme.Enabled ? DarkTheme.InputBackground : SystemColors.Window;
             }
             using (var b = new SolidBrush(color))
             {
                 e.Graphics.FillRectangle(b, rect);
             }
             rect.Y += (int)Math.Ceiling((rect.Height - size.Height) / 2);
-            e.Graphics.DrawString(text, cbFilter.Font, selected ? SystemBrushes.HighlightText : SystemBrushes.WindowText, rect);
+            e.Graphics.DrawString(text, cbFilter.Font, selected ? SystemBrushes.HighlightText : (DarkTheme.Enabled ? DarkTheme.ForegroundBrush : SystemBrushes.WindowText), rect);
         }
 
 
@@ -29237,10 +29237,10 @@ namespace ZipPla
             Color backColor, foreColor;
             if ((e.State & TreeNodeStates.Selected) != 0)
             {
-                backColor = SystemColors.Highlight;
+                backColor = DarkTheme.Enabled ? DarkTheme.SelectionColor : SystemColors.Highlight;
                 foreColor = SystemColors.HighlightText;
 
-                e.Graphics.FillRectangle(SystemBrushes.Highlight, bounds);
+                e.Graphics.FillRectangle(DarkTheme.Enabled ? DarkTheme.SelectionBrush : SystemBrushes.Highlight, bounds);
             }
             else
             {
@@ -33554,8 +33554,8 @@ namespace ZipPla
                     var tempFrameColor = frameColor;
                     var tempBrush = frameBrush;
                     selectedForeColor = SystemColors.HighlightText;
-                    frameColor = SystemColors.Highlight;
-                    frameBrush = SystemBrushes.Highlight;
+                    frameColor = DarkTheme.Enabled ? DarkTheme.SelectionColor : SystemColors.Highlight;
+                    frameBrush = DarkTheme.Enabled ? DarkTheme.SelectionBrush : SystemBrushes.Highlight;
                     DrawItem(dIndex, selected: true, onlyFrame: true);
                     selectedForeColor = tempForeColor;
                     frameColor = tempFrameColor;
