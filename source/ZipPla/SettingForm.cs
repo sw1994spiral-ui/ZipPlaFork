@@ -1845,6 +1845,8 @@ namespace ZipPla
         public bool CheckNgen = false;
         public bool DarkMode = false;
         public int ThumbnailLoadThreads = 0;
+        public bool CatalogCache = true;
+        public int ThumbnailMemoryCacheMB = 256;
         public DragAndDropAction DragAndDropAction = DragAndDropAction.ShowThumbnails;
         public ulong BuiltInViewerMemoryLimit = long.MaxValue;
         public bool AllowUntestedPlugins = false;

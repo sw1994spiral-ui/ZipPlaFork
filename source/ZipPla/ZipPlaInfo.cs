@@ -160,17 +160,32 @@ namespace ZipPla
         
         //private static Regex getOnlyRatingRegex = new Regex(@"\{zpi\$(?:r|[^}]*;r)=([1-5]).*\}[^\\\/]*[\\\/]?$", RegexOptions.Compiled);
         private static readonly Regex getOnlyRatingRegex = new Regex(@"\{zpi\$\s*(?:r|[^}\\\/]*;\s*r)\s*=\s*([1-5])\s*(?:;[^}\\\/]*)?\}[^\\\/]*[\\\/]?$", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+        // GetOnlyRating は文字列に対する純粋関数なので結果をメモ化する（最適化実験）。
+        // 大量ファイルのフォルダでは並び替え・絞り込み・一覧表示のたびに全件へ正規表現を
+        // 適用していたため、2回目以降は辞書参照で済ませる。結果は従来と完全に同一。
+        private static readonly Dictionary<string, int> onlyRatingCache = new Dictionary<string, int>();
+        private static readonly object onlyRatingCacheLocker = new object();
         public static int GetOnlyRating(string path)
         {
+            if (path != null)
+            {
+                lock (onlyRatingCacheLocker)
+                {
+                    int cached;
+                    if (onlyRatingCache.TryGetValue(path, out cached)) return cached;
+                }
+            }
             var m = getOnlyRatingRegex.Match(path);
-            if(m.Success)
+            var result = m.Success ? int.Parse(m.Groups[1].Value) : -1;
+            if (path != null)
             {
-                return int.Parse(m.Groups[1].Value);
+                lock (onlyRatingCacheLocker)
+                {
+                    if (onlyRatingCache.Count > 100000) onlyRatingCache.Clear();
+                    onlyRatingCache[path] = result;
+                }
             }
-            else
-            {
-                return -1;
-            }
+            return result;
         }
 
         /// <summary>
@@ -377,6 +392,379 @@ namespace ZipPla
             {
                 return new ZipPlaInfoParam(Mnemonic, Pattern, MnemonicPatternPair, Regex, Parse, DeParse);
             }
+        }
+    }
+
+    /// <summary>
+    /// カタログキャッシュ（最適化実験）。
+    /// フォルダを開くたびに再計算される「ファイル名マーカーの解析結果（評価・タグ・ジャンル）」と
+    /// 「アーカイブのページ数」を、exe 横の catalogcache フォルダにフォルダ単位で保存する。
+    /// 列挙で得た各ファイルのサイズ・更新日時がキャッシュと全件一致した場合だけ再利用し、
+    /// 1件でも不整合があればそのフォルダ分は丸ごと再構築する。
+    /// キャッシュファイルが壊れている場合は通常の読み込みにフォールバックする。
+    /// GeneralConfig.CatalogCache が false の場合は一切動作しない。
+    /// </summary>
+    internal static class CatalogCache
+    {
+        public sealed class Entry
+        {
+            public long Size;
+            public long MtimeUtcTicks;
+            public int Rating;      // ZipPlaInfo.GetOnlyRating の戻り値（-1 = 評価なし）
+            public string[] Tags;   // null = タグなし
+            public string[] Genres; // null = ジャンルなし。ジャンルメニューのスキャンと同じ正規表現で解析した分割結果
+            public int PageCount;   // -1 = 未取得
+        }
+
+        private const int CacheFileMagic = 0x5A504331; // "ZPC1"
+        private const int CacheFileVersion = 1;
+        private const int MaxCacheFiles = 64;
+
+        private static readonly object Locker = new object();
+        private static bool? enabledCache;
+        private static string activeFolderPath;
+        private static Dictionary<string, Entry> activeTable; // キーはフルパス
+        private static bool activeDirty;
+        private static DateTime lastFlushUtc = DateTime.MinValue;
+
+        // CatalogForm.Genre のジャンル収集と同じ正規表現（結果を完全一致させるため）
+        private static readonly System.Text.RegularExpressions.Regex genreScanRegex =
+            new System.Text.RegularExpressions.Regex(@"\{zpi\$[^}]*?g=([^;}]+)");
+
+        public static bool Enabled
+        {
+            get
+            {
+                if (enabledCache == null)
+                {
+                    var value = true;
+                    try { value = new GeneralConfig().CatalogCache; } catch { }
+                    enabledCache = value;
+                }
+                return enabledCache.Value;
+            }
+        }
+
+        private static string CacheDirectory
+        {
+            get { return Path.Combine(Path.GetDirectoryName(System.Windows.Forms.Application.ExecutablePath), "catalogcache"); }
+        }
+
+        private static string GetCacheFilePath(string normalizedFolderPath)
+        {
+            byte[] hash;
+            using (var sha = System.Security.Cryptography.SHA1.Create())
+            {
+                hash = sha.ComputeHash(Encoding.UTF8.GetBytes(normalizedFolderPath.ToLowerInvariant()));
+            }
+            var sb = new StringBuilder(hash.Length * 2);
+            for (var i = 0; i < hash.Length; i++) sb.Append(hash[i].ToString("x2"));
+            return Path.Combine(CacheDirectory, sb.ToString() + ".dat");
+        }
+
+        private static string GetRelativeKey(string normalizedFolderPath, string fullPath)
+        {
+            var prefix = normalizedFolderPath.EndsWith(Path.DirectorySeparatorChar.ToString())
+                ? normalizedFolderPath : normalizedFolderPath + Path.DirectorySeparatorChar;
+            if (fullPath != null && fullPath.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+            {
+                return fullPath.Substring(prefix.Length);
+            }
+            return fullPath;
+        }
+
+        /// <summary>
+        /// フォルダを開く準備としてキャッシュを検証し、アクティブ化する。
+        /// 検証が通れば保存されていたテーブルを、通らなければ再構築して保存したテーブルを返す。
+        /// 無効化されている場合や対象外の場合は null を返し、アクティブな状態も解除する。
+        /// bwMakePreviewPrepare のバックグラウンドスレッドから呼ばれる。
+        /// </summary>
+        public static Dictionary<string, Entry> Prepare(string dirPath, FileSystemInfo[] fileInfos)
+        {
+            lock (Locker)
+            {
+                FlushLocked();
+                activeFolderPath = null;
+                activeTable = null;
+                activeDirty = false;
+                if (!Enabled || dirPath == null || fileInfos == null) return null;
+                string normalized;
+                try { normalized = Path.GetFullPath(dirPath); } catch { return null; }
+                var table = LoadAndValidate(normalized, fileInfos);
+                if (table == null)
+                {
+                    table = Build(normalized, fileInfos);
+                    if (table == null) return null;
+                    SaveLocked(normalized, table);
+                }
+                activeFolderPath = normalized;
+                activeTable = table;
+                return table;
+            }
+        }
+
+        public static void Deactivate()
+        {
+            lock (Locker)
+            {
+                FlushLocked();
+                activeFolderPath = null;
+                activeTable = null;
+                activeDirty = false;
+            }
+        }
+
+        public static void Flush()
+        {
+            lock (Locker) { FlushLocked(); }
+        }
+
+        public static bool TryGetRating(string fullPath, out int rating)
+        {
+            rating = -1;
+            Entry entry;
+            if (!TryGetEntry(fullPath, out entry)) return false;
+            rating = entry.Rating;
+            return true;
+        }
+
+        public static bool TryGetGenres(string fullPath, out string[] genres)
+        {
+            genres = null;
+            Entry entry;
+            if (!TryGetEntry(fullPath, out entry)) return false;
+            genres = entry.Genres;
+            return true;
+        }
+
+        public static bool TryGetTags(string fullPath, out string[] tags)
+        {
+            tags = null;
+            Entry entry;
+            if (!TryGetEntry(fullPath, out entry)) return false;
+            tags = entry.Tags;
+            return true;
+        }
+
+        public static bool TryGetEntry(string fullPath, out Entry entry)
+        {
+            entry = null;
+            if (fullPath == null) return false;
+            lock (Locker)
+            {
+                if (activeTable == null) return false;
+                return activeTable.TryGetValue(fullPath, out entry);
+            }
+        }
+
+        /// <summary>
+        /// サムネイル読み込み等で判明したページ数をキャッシュへ反映する。
+        /// アクティブなフォルダに属するファイルだけが対象。保存は間引いて行う。
+        /// </summary>
+        public static void NotePageCount(string fullPath, int pageCount)
+        {
+            if (fullPath == null || pageCount < 0) return;
+            lock (Locker)
+            {
+                if (activeTable == null) return;
+                Entry entry;
+                if (!activeTable.TryGetValue(fullPath, out entry)) return;
+                if (entry.PageCount == pageCount) return;
+                try
+                {
+                    var fi = new FileInfo(fullPath);
+                    if (!fi.Exists) return;
+                    entry.Size = fi.Length;
+                    entry.MtimeUtcTicks = fi.LastWriteTimeUtc.Ticks;
+                }
+                catch { return; }
+                entry.PageCount = pageCount;
+                activeDirty = true;
+                if ((DateTime.UtcNow - lastFlushUtc).TotalSeconds >= 30) FlushLocked();
+            }
+        }
+
+        private static Dictionary<string, Entry> LoadAndValidate(string normalizedFolderPath, FileSystemInfo[] fileInfos)
+        {
+            try
+            {
+                var filePath = GetCacheFilePath(normalizedFolderPath);
+                if (!File.Exists(filePath)) return null;
+                Dictionary<string, Entry> byRelativeKey;
+                using (var fs = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.Read))
+                using (var br = new BinaryReader(fs, Encoding.UTF8))
+                {
+                    if (br.ReadInt32() != CacheFileMagic) return null;
+                    if (br.ReadInt32() != CacheFileVersion) return null;
+                    var storedFolder = br.ReadString();
+                    if (!string.Equals(storedFolder, normalizedFolderPath, StringComparison.OrdinalIgnoreCase)) return null;
+                    var count = br.ReadInt32();
+                    if (count < 0 || count != fileInfos.Length) return null;
+                    byRelativeKey = new Dictionary<string, Entry>(count, StringComparer.OrdinalIgnoreCase);
+                    for (var i = 0; i < count; i++)
+                    {
+                        var relKey = br.ReadString();
+                        var entry = new Entry();
+                        entry.Size = br.ReadInt64();
+                        entry.MtimeUtcTicks = br.ReadInt64();
+                        entry.Rating = br.ReadInt32();
+                        entry.Tags = ReadStringArray(br);
+                        entry.Genres = ReadStringArray(br);
+                        entry.PageCount = br.ReadInt32();
+                        byRelativeKey[relKey] = entry;
+                    }
+                }
+                var table = new Dictionary<string, Entry>(fileInfos.Length, StringComparer.OrdinalIgnoreCase);
+                for (var i = 0; i < fileInfos.Length; i++)
+                {
+                    var fileInfo = fileInfos[i];
+                    var fullPath = fileInfo.FullName;
+                    Entry entry;
+                    if (!byRelativeKey.TryGetValue(GetRelativeKey(normalizedFolderPath, fullPath), out entry)) return null;
+                    var entity = FileInfoEx.GetEntityFileInfo(fileInfo);
+                    if (entity == null) return null;
+                    if (entry.Size != entity.Length) return null;
+                    if (entry.MtimeUtcTicks != entity.LastWriteTimeUtc.Ticks) return null;
+                    table[fullPath] = entry;
+                }
+                return table;
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        private static Dictionary<string, Entry> Build(string normalizedFolderPath, FileSystemInfo[] fileInfos)
+        {
+            try
+            {
+                var table = new Dictionary<string, Entry>(fileInfos.Length, StringComparer.OrdinalIgnoreCase);
+                for (var i = 0; i < fileInfos.Length; i++)
+                {
+                    var fileInfo = fileInfos[i];
+                    var entity = FileInfoEx.GetEntityFileInfo(fileInfo);
+                    if (entity == null) continue;
+                    var entry = new Entry();
+                    entry.Size = entity.Length;
+                    entry.MtimeUtcTicks = entity.LastWriteTimeUtc.Ticks;
+                    entry.Rating = ZipPlaInfo.GetOnlyRating(fileInfo.Name);
+                    entry.Genres = ParseGenres(fileInfo.Name);
+                    entry.Tags = ParseTags(fileInfo.FullName);
+                    entry.PageCount = -1;
+                    table[fileInfo.FullName] = entry;
+                }
+                return table;
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        private static string[] ParseGenres(string fileName)
+        {
+            if (string.IsNullOrEmpty(fileName)) return null;
+            var match = genreScanRegex.Match(fileName);
+            if (!match.Success) return null;
+            var parts = match.Groups[1].Value.Split(',');
+            var result = new List<string>();
+            for (var i = 0; i < parts.Length; i++)
+            {
+                var genre = parts[i].Trim();
+                if (genre.Length > 0) result.Add(genre);
+            }
+            return result.Count > 0 ? result.ToArray() : null;
+        }
+
+        private static string[] ParseTags(string fullPath)
+        {
+            try
+            {
+                var info = new ZipPlaInfo(fullPath);
+                return info.TagArray;
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        private static void FlushLocked()
+        {
+            if (!activeDirty || activeFolderPath == null || activeTable == null) return;
+            SaveLocked(activeFolderPath, activeTable);
+            activeDirty = false;
+            lastFlushUtc = DateTime.UtcNow;
+        }
+
+        private static void SaveLocked(string normalizedFolderPath, Dictionary<string, Entry> table)
+        {
+            try
+            {
+                var dir = CacheDirectory;
+                if (!Directory.Exists(dir)) Directory.CreateDirectory(dir);
+                var filePath = GetCacheFilePath(normalizedFolderPath);
+                var tmpPath = filePath + ".tmp";
+                using (var fs = new FileStream(tmpPath, FileMode.Create, FileAccess.Write, FileShare.None))
+                using (var bw = new BinaryWriter(fs, Encoding.UTF8))
+                {
+                    bw.Write(CacheFileMagic);
+                    bw.Write(CacheFileVersion);
+                    bw.Write(normalizedFolderPath);
+                    bw.Write(table.Count);
+                    foreach (var pair in table)
+                    {
+                        var entry = pair.Value;
+                        bw.Write(GetRelativeKey(normalizedFolderPath, pair.Key));
+                        bw.Write(entry.Size);
+                        bw.Write(entry.MtimeUtcTicks);
+                        bw.Write(entry.Rating);
+                        WriteStringArray(bw, entry.Tags);
+                        WriteStringArray(bw, entry.Genres);
+                        bw.Write(entry.PageCount);
+                    }
+                }
+                if (File.Exists(filePath)) File.Replace(tmpPath, filePath, null);
+                else File.Move(tmpPath, filePath);
+                PruneCacheFiles(dir);
+            }
+            catch { }
+        }
+
+        private static void PruneCacheFiles(string dir)
+        {
+            try
+            {
+                var files = new DirectoryInfo(dir).GetFiles("*.dat");
+                if (files.Length <= MaxCacheFiles) return;
+                var ordered = files.OrderBy(f => f.LastWriteTimeUtc).ToArray();
+                for (var i = 0; i < ordered.Length - MaxCacheFiles; i++)
+                {
+                    try { ordered[i].Delete(); } catch { }
+                }
+            }
+            catch { }
+        }
+
+        private static void WriteStringArray(BinaryWriter bw, string[] array)
+        {
+            if (array == null)
+            {
+                bw.Write(-1);
+                return;
+            }
+            bw.Write(array.Length);
+            for (var i = 0; i < array.Length; i++) bw.Write(array[i] ?? "");
+        }
+
+        private static string[] ReadStringArray(BinaryReader br)
+        {
+            var length = br.ReadInt32();
+            if (length < 0) return null;
+            var result = new string[length];
+            for (var i = 0; i < length; i++) result[i] = br.ReadString();
+            return result;
         }
     }
 }

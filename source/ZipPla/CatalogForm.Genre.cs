@@ -43,6 +43,20 @@ namespace ZipPla
             foreach (var path in zpa)
             {
                 if (string.IsNullOrEmpty(path)) continue;
+                // カタログキャッシュ（最適化実験）: 検証済みキャッシュがあれば解析結果を再利用する。
+                // キャッシュ側も同じ正規表現で解析しているため結果は同一になる。
+                string[] cachedGenres;
+                if (CatalogCache.TryGetGenres(path, out cachedGenres))
+                {
+                    if (cachedGenres != null)
+                    {
+                        foreach (var genre in cachedGenres)
+                        {
+                            if (seen.Add(genre)) set.Add(genre);
+                        }
+                    }
+                    continue;
+                }
                 var name = Path.GetFileName(path);
                 if (string.IsNullOrEmpty(name)) continue;
                 var match = regex.Match(name);
@@ -77,6 +91,23 @@ namespace ZipPla
             foreach (var path in zpa)
             {
                 if (string.IsNullOrEmpty(path)) continue;
+                // カタログキャッシュ（最適化実験）: CollectCatalogGenres と同じく解析結果を再利用する
+                string[] cachedGenres;
+                if (CatalogCache.TryGetGenres(path, out cachedGenres))
+                {
+                    if (cachedGenres != null)
+                    {
+                        var perFileCached = new HashSet<string>();
+                        foreach (var genre in cachedGenres)
+                        {
+                            if (!perFileCached.Add(genre)) continue;
+                            int currentCached;
+                            counts.TryGetValue(genre, out currentCached);
+                            counts[genre] = currentCached + 1;
+                        }
+                    }
+                    continue;
+                }
                 var name = Path.GetFileName(path);
                 if (string.IsNullOrEmpty(name)) continue;
                 var match = regex.Match(name);

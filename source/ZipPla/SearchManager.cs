@@ -155,6 +155,19 @@ namespace ZipPla
 
         public bool Match(string name)
         {
+            return MatchCore(name, 0, false);
+        }
+
+        // 評価条件の評価に、呼び出し側が事前に解析した評価を使う版（最適化実験）。
+        // precomputedRating は ZipPlaInfo.GetOnlyRating(name) と同じ値でなければならない。
+        // それ以外の条件（部分一致・ワイルドカード・正規表現）の評価は Match と完全に同一。
+        public bool Match(string name, int precomputedRating)
+        {
+            return MatchCore(name, precomputedRating, true);
+        }
+
+        private bool MatchCore(string name, int precomputedRating, bool usePrecomputedRating)
+        {
             if (name == null) name = "";
             var count = regexArray.Length;
             var result = true;
@@ -196,7 +209,7 @@ namespace ZipPla
                         if (regex != null) r = regex.IsMatch(name);
                         else
                         {
-                            var rating = ZipPlaInfo.GetOnlyRating(name);
+                            var rating = usePrecomputedRating ? precomputedRating : ZipPlaInfo.GetOnlyRating(name);
                             if (rating < 0) r = false;
                             else
                             {

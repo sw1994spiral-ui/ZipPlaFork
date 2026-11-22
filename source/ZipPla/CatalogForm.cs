@@ -7161,6 +7161,21 @@ namespace ZipPla
         bool CreatingZipPathArray = false;
         string[] ZipPathArray;
         string[] ZipNameArray;
+        // ZipNameArray に対応する評価（ZipPlaInfo.GetOnlyRating の結果）の並行配列（最適化実験）。
+        // null の名前には -1 を入れる。利用側は ZipNameArray の null チェックと併せて使うこと。
+        int[] ZipRatingArray;
+
+        private static int[] BuildRatingArray(string[] nameArray)
+        {
+            if (nameArray == null) return null;
+            var result = new int[nameArray.Length];
+            for (var i = 0; i < nameArray.Length; i++)
+            {
+                var name = nameArray[i];
+                result[i] = name == null ? -1 : ZipPlaInfo.GetOnlyRating(name);
+            }
+            return result;
+        }
         int[] ZipPageArray;
         DateTime[] CreateTimeArray;
         DateTime[] LastAccessTimeArray;
@@ -8281,6 +8296,7 @@ namespace ZipPla
 
             if (type == LoadTargetType.ImageArchive)
             {
+                CatalogCache.Deactivate();
                 PackedImageLoaderWithEntries loader;
                 try
                 {
@@ -8371,11 +8387,14 @@ namespace ZipPla
                         ZipSizeArray[i] = entry.Size;
                         ZipMaskArray[i] = true;
                     }
+
+                    ZipRatingArray = BuildRatingArray(ZipNameArray);
                 }
             }
 
             else if (type == LoadTargetType.Movie)
             {
+                CatalogCache.Deactivate();
                 TimeSpan duration;
                 MovieInfo movieInfo;
                 try
@@ -8535,6 +8554,8 @@ namespace ZipPla
 
                         MovieInfoArray[i] = movieInfo;
                     }
+
+                    ZipRatingArray = BuildRatingArray(ZipNameArray);
                 }
             }
 
@@ -8656,6 +8677,32 @@ namespace ZipPla
                 }
 
 
+                // カタログキャッシュ（最適化実験）: 実フォルダの場合のみ検証・再利用する。
+                // 検証済みキャッシュがあれば、未取得のページ数を先行して埋める。
+                if (type == LoadTargetType.Directory)
+                {
+                    var cacheTable = CatalogCache.Prepare(dirPath, fileInfos);
+                    if (cacheTable != null)
+                    {
+                        for (var i = 0; i < zipPathArray.Length; i++)
+                        {
+                            if (fileCountArray[i] != MetaPageCount_NotLoaded) continue;
+                            CatalogCache.Entry cacheEntry;
+                            if (cacheTable.TryGetValue(zipPathArray[i], out cacheEntry) && cacheEntry.PageCount >= 0)
+                            {
+                                fileCountArray[i] = cacheEntry.PageCount;
+                            }
+                        }
+                    }
+                }
+                else
+                {
+                    CatalogCache.Deactivate();
+                }
+
+                // 評価の並行配列（最適化実験）: 並び替え・絞り込みのたびの再解析を避けるためここで1回だけ作る
+                var zipRatingArray = BuildRatingArray(zipNameArray);
+
                 lock (ZipPathArrayLocker)
                 {
 
@@ -8669,6 +8716,7 @@ namespace ZipPla
                     }
 
                     ZipPathArray = zipPathArray; //ShowStatusBar();
+                    ZipRatingArray = zipRatingArray;
                     ZipNameArray = zipNameArray;
                     ZipPageArray = zipPageArray;
                     CreateTimeArray = createTimeArray;
@@ -8917,6 +8965,9 @@ namespace ZipPla
                 //sw.Stop(); ss += $"srtEnd:\t{sw.Elapsed}\n"; sw.Restart();
                 tvCatalog.Clear(len, selectedIndex, tScrollbar, sortedArray, ChangeThumbnailSize_Width, ChangeThumbnailSize_Height, Program.DpiScaling(ChangeThumbnailSize_Padding * currentMinimumFrameThickness));
                 sortedArray = null;
+
+                // サムネイルのメモリキャッシュ（最適化実験）: カタログを作り直したら古い世代を使わない
+                ThumbnailMemoryCache.Invalidate();
 
                 //sw.Stop(); ss += $"clearEnd:\t{sw.Elapsed}\n"; sw.Restart();
                 for (var i = 0; i < len; i++)
@@ -9786,6 +9837,7 @@ namespace ZipPla
             if (CatalogForm_FormClosing_FormClosed) return;
 
             CatalogForm_FormClosing_FormClosed = true;
+            CatalogCache.Flush();
             bmwMakePreview.CancelAsync();
 
             setCurrentFilterToHistory(bringToTop: true);
@@ -14120,6 +14172,18 @@ namespace ZipPla
         string GetSortArray_RandomSeed;
         //bool GetSortArray_RandomSeed_Set = false;
         public static readonly LogicalStringComparer GetSortArray_NaturalSort = new LogicalStringComparer();
+
+        // 絞り込み評価（最適化実験）: 評価が並行配列にあればそれを使い、名前の再解析を避ける。
+        // 並行配列の値は ZipPlaInfo.GetOnlyRating(name) と常に一致するよう保守されている。
+        private bool MatchByFilter(int index, string name)
+        {
+            var ratingArray = ZipRatingArray;
+            if (ratingArray != null && index < ratingArray.Length)
+            {
+                return cbFilter_SearchManager.Match(name, ratingArray[index]);
+            }
+            return cbFilter_SearchManager.Match(name);
+        }
         private static readonly filePathComparator GetSortArray_FilePathComparator = new filePathComparator();
         //private readonly Random randomForPermutation = new Random();
         private int[] GetSortArray(int[] preSortArray, bool careTvCatalog = true, SortMode? sortMode = null, bool recursiveCall = false)
@@ -14142,7 +14206,7 @@ namespace ZipPla
                     if (!ZipMaskArray[i]) continue;
 
                     string name;
-                    if (invalid || (name = ZipNameArray[i]) != null && cbFilter_SearchManager.Match(ZipNameArray[i]))
+                    if (invalid || (name = ZipNameArray[i]) != null && MatchByFilter(i, ZipNameArray[i]))
                     {
                         orderList.Add(i);
                     }
@@ -14200,7 +14264,21 @@ namespace ZipPla
                     }
                 case SortMode.RatingInAsc:
                 case SortMode.RatingInDesc:
-                    var ratingArray = (from name in ZipNameArray select name == null ? 0 : ZipPlaInfo.GetOnlyRating(name)).ToArray();
+                    int[] ratingArray;
+                    var cachedRatingArray = ZipRatingArray;
+                    if (cachedRatingArray != null && cachedRatingArray.Length == count)
+                    {
+                        // 並行配列（カタログ構築時に1回だけ解析）のコピーに、従来と同じ変換を適用する
+                        ratingArray = (int[])cachedRatingArray.Clone();
+                        for (var i = 0; i < count; i++)
+                        {
+                            if (ZipNameArray[i] == null) ratingArray[i] = 0;
+                        }
+                    }
+                    else
+                    {
+                        ratingArray = (from name in ZipNameArray select name == null ? 0 : ZipPlaInfo.GetOnlyRating(name)).ToArray();
+                    }
                     if (localSortMode == SortMode.RatingInAsc)
                     {
                         var sortCount = ratingArray.Length;
@@ -15021,7 +15099,8 @@ namespace ZipPla
                 // changed = true;
             }
             var rateCell = row.Cells[tbcRating.Index] as RatingGridViewTextBoxCell;
-            var rate = ZipPlaInfo.GetOnlyRating(name);
+            int rate;
+            if (!CatalogCache.TryGetRating(path, out rate)) rate = ZipPlaInfo.GetOnlyRating(name);
             //if(rateCell.Rating != rate)
             {
                 rateCell.Rating = rate;
@@ -18631,6 +18710,7 @@ namespace ZipPla
                             //isDir = oldPath != null ? ZipNameArray[index].EndsWith(Path.DirectorySeparatorChar.ToString()) : Directory.Exists(newPath);
                             isDir = Directory.Exists(newPath);
                             ZipNameArray[index] = zipName = getRelativePath(path, isDir);// name + Path.DirectorySeparatorChar;
+                            if (ZipRatingArray != null && index < ZipRatingArray.Length) ZipRatingArray[index] = zipName == null ? -1 : ZipPlaInfo.GetOnlyRating(zipName);
 
                             FileSystemInfo info;
                             if (isDir)
@@ -18771,6 +18851,7 @@ namespace ZipPla
                                         ZipSizeArray[index] = fileSize;
                                         ImageInfoArray[index] = imageInfo;
                                         MovieInfoArray[index] = movieInfo;
+                                        CatalogCache.NotePageCount(path, filecount);
 
                                         setFileListRowInLock(index, dynamicOnly: false, localOnly: false, cultureForOnlyStatic: Message.CurrentLanguage, volatilitySortCancelIfChanged: true);
 
@@ -19436,6 +19517,7 @@ namespace ZipPla
 
                                 var name = getRelativePath(path, ZipNameArray[index]);// name + (isDir ? Path.DirectorySeparatorChar.ToString() : "");
                                 ZipNameArray[index] = name;
+                                if (ZipRatingArray != null && index < ZipRatingArray.Length) ZipRatingArray[index] = name == null ? -1 : ZipPlaInfo.GetOnlyRating(name);
 
                                 setFileListRowInLock(index, dynamicOnly: false, localOnly: false, cultureForOnlyStatic: Message.CurrentLanguage, volatilitySortCancelIfChanged: true);
 
@@ -20831,6 +20913,7 @@ namespace ZipPla
                             ZipMaskArray[index] = false;
                             ZipPathArray[index] = null;
                             ZipNameArray[index] = null;
+                            if (ZipRatingArray != null && index < ZipRatingArray.Length) ZipRatingArray[index] = -1;
                             tvCatalog[index] = null; // これで Dispose される
                             //deleteList.Add(path);
                             if (!isSor) isDirList.Add(name.EndsWith(Path.DirectorySeparatorChar.ToString()));
@@ -25930,10 +26013,13 @@ namespace ZipPla
                 var loadResultArray2 = new LoadResult[count21]; Array.Copy(loadResultArray, loadResultArray2, count);
                 var zipSizeArray2 = new long[count21]; Array.Copy(zipSizeArray, zipSizeArray2, count);
                 var zipMaskArray2 = new bool[count21]; Array.Copy(zipMaskArray, zipMaskArray2, count);
+                var zipRatingArray = ZipRatingArray; if (zipRatingArray == null || zipRatingArray.Length != count) zipRatingArray = BuildRatingArray(zipNameArray);
+                var zipRatingArray2 = new int[count21]; Array.Copy(zipRatingArray, zipRatingArray2, count);
 
                 for (var i = count; i < count21; i++)
                 {
                     zipPageArray2[i] = -1;
+                    zipRatingArray2[i] = -1;
                 }
 
                 lock (ZipPathArrayLocker)
@@ -25950,6 +26036,7 @@ namespace ZipPla
                     LoadResultArray = loadResultArray2;
                     ZipSizeArray = zipSizeArray2;
                     ZipMaskArray = zipMaskArray2;
+                    ZipRatingArray = zipRatingArray2;
                 }
                 //MessageBox.Show($"{ZipPathArray.Length}");
                 tvCatalog.ItemBuffSizeChange(count21);
@@ -30285,6 +30372,131 @@ namespace ZipPla
     }
 
 
+    /// <summary>
+    /// サムネイルのメモリキャッシュ（最適化実験）。
+    /// ThumbViewerItem が表示範囲外になると Bitmap は破棄されるため、戻りスクロールでは
+    /// ディスクキャッシュからの再読み込みと再デコードが毎回発生していた。
+    /// ここでは読み込み済みサムネイルを総バイト数上限つき LRU で保持し、再表示を高速化する。
+    /// 所有権の競合を避けるため、キャッシュが所有する Bitmap は出し入れの際に複製し、
+    /// アイテム側の Dispose がキャッシュ側に及ばないようにする。
+    /// カタログの再構築（フォルダ移動・サムネイルサイズ変更等）では世代を進め、
+    /// 古い世代のエントリは使わない。容量は GeneralConfig.ThumbnailMemoryCacheMB（0 で無効）。
+    /// </summary>
+    static class ThumbnailMemoryCache
+    {
+        private sealed class Entry
+        {
+            public Bitmap Bitmap;
+            public long Bytes;
+            public int Generation;
+            public LinkedListNode<string> Node;
+        }
+
+        private static readonly object Locker = new object();
+        private static readonly Dictionary<string, Entry> Table = new Dictionary<string, Entry>();
+        private static readonly LinkedList<string> Lru = new LinkedList<string>(); // 先頭が最も古い
+        private static long totalBytes;
+        private static int generation;
+        private static long? capacityBytesCache;
+
+        private static long CapacityBytes
+        {
+            get
+            {
+                if (capacityBytesCache == null)
+                {
+                    var mb = 256;
+                    try { mb = new GeneralConfig().ThumbnailMemoryCacheMB; } catch { }
+                    capacityBytesCache = mb <= 0 ? 0 : (long)mb * 1024 * 1024;
+                }
+                return capacityBytesCache.Value;
+            }
+        }
+
+        public static void Invalidate()
+        {
+            lock (Locker) { generation++; }
+        }
+
+        public static bool TryGet(string path, out Bitmap bitmap)
+        {
+            bitmap = null;
+            if (path == null || CapacityBytes <= 0) return false;
+            lock (Locker)
+            {
+                Entry entry;
+                if (!Table.TryGetValue(path, out entry)) return false;
+                if (entry.Generation != generation)
+                {
+                    RemoveLocked(path, entry);
+                    return false;
+                }
+                Lru.Remove(entry.Node);
+                entry.Node = Lru.AddLast(path);
+                try
+                {
+                    bitmap = new Bitmap(entry.Bitmap);
+                }
+                catch
+                {
+                    return false;
+                }
+                return true;
+            }
+        }
+
+        public static void Add(string path, Bitmap bitmap)
+        {
+            if (path == null || bitmap == null || CapacityBytes <= 0) return;
+            var bytes = EstimateBytes(bitmap);
+            if (bytes > CapacityBytes) return;
+            Bitmap copy;
+            try { copy = new Bitmap(bitmap); }
+            catch { return; }
+            lock (Locker)
+            {
+                Entry old;
+                if (Table.TryGetValue(path, out old)) RemoveLocked(path, old);
+                var entry = new Entry();
+                entry.Bitmap = copy;
+                entry.Bytes = bytes;
+                entry.Generation = generation;
+                entry.Node = Lru.AddLast(path);
+                Table[path] = entry;
+                totalBytes += bytes;
+                while (totalBytes > CapacityBytes && Lru.Count > 0)
+                {
+                    var firstPath = Lru.First.Value;
+                    Entry victim;
+                    if (Table.TryGetValue(firstPath, out victim)) RemoveLocked(firstPath, victim);
+                    else Lru.RemoveFirst();
+                }
+            }
+        }
+
+        private static void RemoveLocked(string path, Entry entry)
+        {
+            Table.Remove(path);
+            if (entry.Node != null) Lru.Remove(entry.Node);
+            totalBytes -= entry.Bytes;
+            if (entry.Bitmap != null) entry.Bitmap.Dispose();
+        }
+
+        private static long EstimateBytes(Bitmap bitmap)
+        {
+            try
+            {
+                var bitsPerPixel = System.Drawing.Image.GetPixelFormatSize(bitmap.PixelFormat);
+                if (bitsPerPixel <= 0) bitsPerPixel = 32;
+                return (long)bitmap.Width * bitmap.Height * (bitsPerPixel + 7) / 8 + 1024;
+            }
+            catch
+            {
+                return 64 * 1024;
+            }
+        }
+    }
+
     public class ThumbViewerItem : IDisposable
     {
         static readonly int thumbnailLoadConcurrency = GetThumbnailLoadConcurrency();
@@ -30346,24 +30558,46 @@ namespace ZipPla
         public async Task LoadAsync()
         {
             var path = FilePath;
-            if (path == null || OwnerCatalog == null || source != null || Image != null) 
+            if (path == null || OwnerCatalog == null || source != null || Image != null)
                 return;
+            // メモリキャッシュ（最適化実験）: ヒットすればセマフォも GetThumbnail も介さず即座に使う
+            Bitmap cachedThumbnail;
+            if (ThumbnailMemoryCache.TryGet(path, out cachedThumbnail))
+            {
+                Image = cachedThumbnail;
+                return;
+            }
             source = new CancellationTokenSource();
-            MovieInfo info = null;
-            await semaphore.WaitAsync();
+            var token = source.Token;
+            var acquired = false;
             try
             {
-                if (source.IsCancellationRequested)
+                try
+                {
+                    // 待ちにもキャンセルトークンを渡し、スクロールで不要になった要求が即座に抜けるようにする
+                    await semaphore.WaitAsync(token);
+                    acquired = true;
+                }
+                catch (OperationCanceledException)
+                {
                     return;
-                Image = await Task.Run(() => OwnerCatalog.GetThumbnail(path, Directory.Exists(path), null, out _, out _, out _, out _, out _, ref info, false));
+                }
+                if (token.IsCancellationRequested)
+                    return;
+                MovieInfo info = null;
+                var loadedFileCount = -1;
+                var loaded = await Task.Run(() => OwnerCatalog.GetThumbnail(path, Directory.Exists(path), null, out _, out loadedFileCount, out _, out _, out _, ref info, false));
+                if (loaded != null) ThumbnailMemoryCache.Add(path, loaded);
+                CatalogCache.NotePageCount(path, loadedFileCount);
+                Image = loaded;
                 if (FilePath != path)
                     Image = null;
             }
             finally
             {
+                if (acquired) semaphore.Release();
                 source.Dispose();
                 source = null;
-                semaphore.Release();
             }
         }
 
@@ -32573,19 +32807,23 @@ namespace ZipPla
             //表示中のアイテム+前後1列のアイテムのBitmapを読み込み、それ以外を破棄する
             var clearBefore = -AutoScrollPosition.Y / gridSizeV - 1;
             var clearAfter = (-AutoScrollPosition.Y + Height) / gridSizeV + 2;
+            //先読み（最適化実験）: 読み込み開始だけは表示範囲の下に1行分余分に行う。
+            //破棄の境界は clearAfter ではなく loadAfter に合わせ、先読みした行が即座に破棄されないようにする。
+            //先読みした行はスクロールで表示範囲に入るか、範囲から外れた時点で通常どおり破棄される。
+            var loadAfter = clearAfter + 1;
             for(int i=0;i<clearBefore*cols;i++)
             {
                 var dataIndex = ShowIndexToDataIndex[i];
                 var item = items[dataIndex];
                 item.Clear();
             }
-            for(int i=Math.Max(0, clearBefore*cols); i < Math.Min(clearAfter*cols, ShowIndexToDataIndex.Length);i++)
+            for(int i=Math.Max(0, clearBefore*cols); i < Math.Min(loadAfter*cols, ShowIndexToDataIndex.Length);i++)
             {
                 var dataIndex = ShowIndexToDataIndex[i];
                 var item = items[dataIndex];
                 _ = item.LoadAsync();
             }
-            for(int i=clearAfter*cols;i<showIndexToDataIndex.Length;i++)
+            for(int i=loadAfter*cols;i<showIndexToDataIndex.Length;i++)
             {
                 var dataIndex = ShowIndexToDataIndex[i];
                 var item = items[dataIndex];
